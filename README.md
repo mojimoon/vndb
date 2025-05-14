@@ -31,11 +31,13 @@
 
 ## 使用方法
 
-1. 下载 database dump，解压缩到 `vndb-db` 目录下。
+1. 下载 database dump，解压缩到 `db` 目录下。
 
 ```bash
-curl -L -o vndb-db-latest.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
-tar -I zstd -xf vndb-db-latest.tar.zst
+curl -L -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
+mkdir -p db
+tar -I zstd -xf db.tar.zst -C db/
+rm db.tar.zst
 ```
 
 2. 安装依赖。
