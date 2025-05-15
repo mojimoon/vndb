@@ -89,13 +89,16 @@ def compute_dist(ulist_vns):
     plain = np.zeros((N, 11), dtype=np.int16)
     ulist = ulist_vns.copy()
     # vote divided by 10 then rounded
-    ulist[:, 2] //= 10
+    ulist[:, 2] = np.round((ulist[:, 2].astype(np.float16) / 10)).astype(np.int16)
+    # describe ulist[:, 2]
     for i in range(ulist.shape[0]):
         plain[ulist[i, 1], ulist[i, 2]] += 1
     votes = np.sum(plain, axis=1)
     avg = np.sum(plain * np.arange(11), axis=1) / votes
     std = np.sqrt(np.sum(plain * (np.arange(11) - avg[:, None]) ** 2, axis=1) / votes)
-    df = pd.DataFrame({'vid': np.arange(N), **{f'_{i}': plain[:, i] for i in range(1, 11)}, 'votes': votes, 'avg': avg, 'std': std})
+    # rank = np.empty_like(avg, dtype=np.int16)
+    # rank[np.argsort(avg)] = np.arange(N, 0, -1)
+    df = pd.DataFrame({'idx': np.arange(N), **{f'_{i}': plain[:, i] for i in range(1, 11)}, 'votes': votes, 'avg': avg, 'std': std})
     df.to_csv(os.path.join(out_dir, "dist.csv"), index=False, float_format='%.4f')
 
 def partial_order():
@@ -263,7 +266,8 @@ def random_walk_score(data, N, alpha=0.85, max_iter=100, eps=1e-6):
         scores = alpha * mat.T.dot(scores) + (1 - alpha) / N
         if np.linalg.norm(scores - last_scores, 1) < eps:
             break
-    scores *= N
+    # sum(scores) = 1, smaller score = better
+    scores = 1 / scores
     return scores
 
 def elo_rating_score(data, N, K=32, base=1500, divisor=400):
@@ -350,16 +354,26 @@ def connect_title(vn):
         if pd.isna(vn['title_en'][i]) and pd.isna(vn['title_ja'][i]):
             _id = vn['id'][i]
             titles = vn_titles[vn_titles['id'] == _id]
-            print(f"{_id} is missing title_en and title_ja")
+            # print(f"{_id} is missing title_en and title_ja")
             if len(titles) > 0:
                 vn.loc[i, 'title_en'] = titles.iloc[0]['latin']
                 vn.loc[i, 'title_ja'] = titles.iloc[0]['title']
-                print(f"found title_en: {vn['title_en'][i]}, title_ja: {vn['title_ja'][i]}")
+                # print(f"found title_en: {vn['title_en'][i]}, title_ja: {vn['title_ja'][i]}")
     
-    # remove repeating titles. if zh == en, remove zh. if zh == ja, remove zh. if en == ja, remove en.
+    # remove duplicate titles
     vn['title_zh'] = np.where(vn['title_zh'] == vn['title_en'], '', vn['title_zh'])
     vn['title_ja'] = np.where(vn['title_ja'] == vn['title_en'], '', vn['title_ja'])
     vn['title_ja'] = np.where(vn['title_ja'] == vn['title_zh'], '', vn['title_ja'])
+
+    vn['title_ja'].fillna('', inplace=True)
+    vn['title_zh'].fillna('', inplace=True)
+    vn['title_en'].fillna('', inplace=True)
+
+    # for search = title_ja + title_zh + title_en + alias joined with \n
+    vn['search'] = np.where(vn['title_ja'] == '', '', vn['title_ja'] + '\n') + np.where(vn['title_zh'] == '', '', vn['title_zh'] + '\n') + np.where(vn['title_en'] == '', '', vn['title_en'] + '\n') + np.where(vn['alias'] == '', '', vn['alias'])
+    # vn['search'] = np.where(np.isnan(vn['title_ja']), '', vn['title_ja'] + '\n') + np.where(np.isnan(vn['title_zh']), '', vn['title_zh'] + '\n') + np.where(np.isnan(vn['title_en']), '', vn['title_en'] + '\n') + np.where(np.isnan(vn['alias']), '', vn['alias'])
+    vn['search'] = vn['search'].str.lower()
+
 
 def full_order():
     po = po_load()
@@ -374,18 +388,38 @@ def full_order():
 
     scores = classical_score(po, N, appear)
     pagerank = random_walk_score(po, N)
-    elo = elo_rating_score_fast(po, N, base=1500, divisor=400)
+    elo = elo_rating_score_fast(po, N)
     entropy = entropy_weighted_score(po, N)
 
     res = pd.DataFrame({ 'idx': np.arange(N), 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
+
+    # merge dist with c_rating. Then sort by (1) res.c_rating (2) dist.avg and create rank
+    dist = pd.read_csv(os.path.join(out_dir, "dist.csv"))
+    dist['c_rating'] = vn['c_rating'].astype(np.float16) / 100
+    dist.sort_values(by=['c_rating', 'avg'], ascending=[False, False], inplace=True)
+    dist['rank'] = np.arange(len(dist))
+    res = res.merge(dist[['idx', 'c_rating', 'rank']], left_on='idx', right_on='idx', how='left')
     res = res[res['appear'] > 0]
-    res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'alias']], left_on='vid', right_on='id', how='left')
+
+    res = res.merge(vn[['id', 'c_votecount', 'alias']], left_on='vid', right_on='id', how='left')
     connect_title(res)
+    res.drop(columns=['id'], inplace=True)
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
+
+# def create_search_string():
+#     res = pd.read_csv(os.path.join(out_dir, "full_order.csv"))
+#     res['title_ja'].fillna('', inplace=True)
+#     res['title_zh'].fillna('', inplace=True)
+#     res['title_en'].fillna('', inplace=True)
+#     res['alias'].fillna('', inplace=True)
+#     res['search'] = np.where(res['title_ja'] == '', '', res['title_ja'] + '\\n') + np.where(res['title_zh'] == '', '', res['title_zh'] + '\\n') + np.where(res['title_en'] == '', '', res['title_en'] + '\\n') + np.where(res['alias'] == '', '', res['alias'])
+#     res['search'] = res['search'].str.lower()
+#     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
 def main():
     # partial_order()
     # full_order()
+    # create_search_string()
 
 if __name__ == "__main__":
     main()
