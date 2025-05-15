@@ -311,7 +311,7 @@ def full_order():
 
     scores = classical_score(po, N, appear)
     pagerank = random_walk_score(po, N)
-    elo = elo_rating_score(po, N, K=64, divisor=800)
+    elo = elo_rating_score(po, N, base=5000, divisor=1500)
     entropy = entropy_weighted_score(po, N)
 
     res = pd.DataFrame({ 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
