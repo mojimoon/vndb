@@ -99,9 +99,9 @@ def compute_dist(ulist_vns):
 
 def partial_order():
     vn = read("vn")
-    vn = vn[vn['c_rating'] != '\\N']
-    vn['c_rating'] = vn['c_rating'].astype(int)
-    vn = vn[vn['c_rating'] >= min_vote]
+    vn = vn[vn['c_votecount'] != '\\N']
+    vn['c_votecount'] = vn['c_votecount'].astype(int)
+    vn = vn[vn['c_votecount'] >= min_vote]
     print(f"# of vn: {len(vn)}")
     vid2idx = {vid: i for i, vid in enumerate(vn['id'])}
     with open(os.path.join(out_dir, "vid.txt"), "w") as f:
@@ -117,7 +117,6 @@ def partial_order():
     ulist_vns = ulist_vns[['uid', 'idx', 'vote']].to_numpy()
     print(f"# of ulist_vns: {len(ulist_vns)}")
     compute_dist(ulist_vns)
-    sys.exit(0)
     
     pv, nv, tv = np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16)
     _begin = 0
@@ -280,6 +279,24 @@ def elo_rating_score(data, N, K=32, base=1500, divisor=400):
             rating[j] += K * (1 - (1 - E0))
     return rating
 
+def elo_rating_score_fast(data, N, K=32, base=1500, divisor=400, delta_thres=1e-3):
+    rating = np.full(N, base, dtype=np.float64)
+    for row in data:
+        i, j, pv, nv, tv = row
+        E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
+        if pv > 0:
+            delta = K * (1 - E0)
+            if abs(delta) > delta_thres:
+                rating[i] += pv * delta
+                rating[j] += pv * K * (0 - (1 - E0))
+        if nv > 0:
+            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
+            delta = K * (0 - E0)
+            if abs(delta) > delta_thres:
+                rating[i] += nv * delta
+                rating[j] += nv * K * (1 - (1 - E0))
+    return rating
+
 def entropy_weighted_score(data, N):
     scores = np.zeros((N, 2))
     n = data[:, 2] + data[:, 3]
@@ -327,18 +344,18 @@ def full_order():
 
     scores = classical_score(po, N, appear)
     pagerank = random_walk_score(po, N)
-    elo = elo_rating_score(po, N, base=5000, divisor=1000)
+    elo = elo_rating_score_fast(po, N, base=5000, divisor=1000)
     entropy = entropy_weighted_score(po, N)
 
     res = pd.DataFrame({ 'idx': np.arange(N), 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
     res = res[res['appear'] > 0]
-    res = res.merge(vn[['id', 'c_votecount', 'alias']], left_on='vid', right_on='id', how='left')
+    res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'alias']], left_on='vid', right_on='id', how='left')
     associate_title(res)
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
 def main():
-    partial_order()
-    # full_order()
+    # partial_order()
+    full_order()
 
 if __name__ == "__main__":
     main()
