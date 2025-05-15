@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     skipEmptyLines: true,
   });
 
-  const searchParams = new URL(request.url).searchParams;
+  const { searchParams } = new URL(request.url);
   const q = searchParams.get('q')?.trim().toLowerCase() || '';
 
   let filtered = parsedData.data;
