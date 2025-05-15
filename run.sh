@@ -7,5 +7,4 @@ pip install -r requirements.txt
 python main.py
 
 mkdir -p web/data
-mv out/dist.csv web/data/
-mv out/full_order.csv web/data/
+mv out/*.csv web/data/

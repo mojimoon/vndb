@@ -1,4 +1,4 @@
 vndb-db-*/
 db/
 *.tar.zst
-out/partial_order.csv
+partial_order.csv

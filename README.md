@@ -64,8 +64,7 @@ python main.py
 
 ```bash
 mkdir -p web/data
-mv out/dist.csv web/data/
-mv out/full_order.csv web/data/
+mv out/*.csv web/data/
 ```
 
 4. 启动 web 服务器。

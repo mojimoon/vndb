@@ -8,6 +8,7 @@ from scipy.sparse import dok_matrix
 
 db_dir = 'db/db'
 out_dir = 'out'
+web_data_dir = 'web/data'
 
 if not os.path.exists(db_dir):
     raise FileNotFoundError(f"Database directory '{db_dir}' does not exist. Please run the setup script.")
@@ -383,8 +384,8 @@ def full_order():
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
 def main():
-    partial_order()
-    full_order()
+    # partial_order()
+    # full_order()
 
 if __name__ == "__main__":
     main()
