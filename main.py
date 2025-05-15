@@ -389,7 +389,7 @@ def postfix():
     res['search'] = res['search'].str.replace('\\n', ' ', regex=False)
 
     res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'c_average']], left_on='vid', right_on='id', how='left')
-    res.drop(columns=['id'], inplace=True)
+    res.drop(columns=['id', 'appear'], inplace=True)
     res['c_rating'] = res['c_rating'].astype(np.int16) / 100
     res['c_average'] = res['c_average'].astype(np.int16) / 100
     res.sort_values(by=['c_rating', 'c_average'], ascending=[False, False], inplace=True)
