@@ -90,7 +90,7 @@ const columns: MRT_ColumnDef<FullOrder>[] = [
 
 export default function RankList() {
   const [data, setData] = useState<FullOrder[]>([]);
-  const [search, setSearch] = useState<string | null>(null);
+  const [search, setSearch] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   
   const fetchData = async () => {
@@ -122,7 +122,7 @@ export default function RankList() {
       </Typography>
       <Box component="form" sx={{ mb: 2 }} display="flex" justifyContent="center">
         <TextField
-          label="搜索"
+          label="搜索 (可输入中/英/日文标题/简称/别名)"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && fetchData()}

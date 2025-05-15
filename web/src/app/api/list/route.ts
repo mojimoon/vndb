@@ -17,6 +17,12 @@ export async function GET(request: Request) {
     dynamicTyping: true,
   });
 
+  parsedData.data.forEach((item) => {
+    if (typeof item.search !== 'string') {
+      item.search = '';
+    }
+  });
+
   const { searchParams } = new URL(request.url);
   const q = searchParams.get('q')?.trim().toLowerCase() || '';
 
