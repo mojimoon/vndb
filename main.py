@@ -7,8 +7,8 @@ from scipy.sparse import dok_matrix
 # from tqdm import tqdm
 
 db_dir = 'db/db'
-out_dir = 'out'
-web_data_dir = 'web/data'
+out_dir = 'web/public/out'
+web_data_dir = 'web/public/out'
 
 if not os.path.exists(db_dir):
     raise FileNotFoundError(f"Database directory '{db_dir}' does not exist. Please run the setup script.")
@@ -355,20 +355,21 @@ def postfix():
     vn = vn[vn['id'].isin(vid)]
     
     res = pd.read_csv(os.path.join(out_dir, "full_order.csv"))
-    res = res[['idx', 'vid', 'appear', 'total', 'percentage', 'simple', 'weighted_simple', 'pagerank', 'elo', 'entropy']]
+    res = res[['idx', 'vid', 'total', 'percentage', 'simple', 'weighted_simple', 'pagerank', 'elo', 'entropy']]
     assert vn.shape[0] == res.shape[0]
     vn.reset_index(drop=True, inplace=True)
 
+    res = res.merge(vn[['id', 'alias', 'c_votecount', 'c_rating', 'c_average']], left_on='vid', right_on='id', how='left')
     vn_titles = read("vn_titles")
     olang = vn['olang']
     _ja, _zh, _en = vn_titles[vn_titles['lang'] == 'ja'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'en']
     res['title_ja'] = res['vid'].map(_ja.set_index('id')['title'])
     res['title_en'] = res['vid'].map(_en.set_index('id')['title'])
     res['title_zh'] = res['vid'].map(_zh.set_index('id')['title'])
-
+    
     for i in range(len(res)):
-        if pd.isna(res['title_zh'][i]) and not pd.isna(vn['alias'][i]):
-            alias = vn['alias'][i]
+        if pd.isna(res['title_zh'][i]) and not pd.isna(res['alias'][i]):
+            alias = res['alias'][i]
             _ = alias.split('\\n')
             _ = [a for a in _ if any('\u4e00' <= c <= '\u9fff' for c in a) and not any('\u3040' <= c <= '\u30ff' for c in a)]
             # _ = sorted(_, key=len, reverse=True)
@@ -384,12 +385,9 @@ def postfix():
     res['title_ja'] = res['title_ja'].fillna('')
     res['title_en'] = res['title_en'].fillna('')
     res['title_zh'] = res['title_zh'].fillna('')
-    res['alias'] = vn['alias'].fillna('')
     res['search'] = res['title_ja'] + '\\n' + res['title_en'] + '\\n' + res['title_zh'] + '\\n' + res['alias']
     res['search'] = res['search'].str.replace('\\n', ' ', regex=False)
-
-    res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'c_average']], left_on='vid', right_on='id', how='left')
-    res.drop(columns=['id', 'appear'], inplace=True)
+    res.drop(columns=['id'], inplace=True)
     res['c_rating'] = res['c_rating'].astype(np.int16) / 100
     res['c_average'] = res['c_average'].astype(np.int16) / 100
     res.sort_values(by=['c_rating', 'c_average'], ascending=[False, False], inplace=True)
