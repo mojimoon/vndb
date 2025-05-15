@@ -368,19 +368,24 @@ def postfix():
     res['title_zh'] = res['vid'].map(_zh.set_index('id')['title'])
     
     for i in range(len(res)):
-        if pd.isna(res['title_zh'][i]) and not pd.isna(res['alias'][i]):
+        zh_q = pd.isna(res['title_zh'][i])
+        if zh_q and not pd.isna(res['alias'][i]):
             alias = res['alias'][i]
             _ = alias.split('\\n')
             _ = [a for a in _ if any('\u4e00' <= c <= '\u9fff' for c in a) and not any('\u3040' <= c <= '\u30ff' for c in a)]
             # _ = sorted(_, key=len, reverse=True)
             if len(_) > 0:
                 res.loc[i, 'title_zh'] = _[0]
+                zh_q = False
 
         if pd.isna(res['title_en'][i]) and pd.isna(res['title_ja'][i]):
             olang_title = vn_titles[(vn_titles['id'] == res['vid'][i]) & (vn_titles['lang'] == olang[i])]
             if len(olang_title) > 0:
                 res.loc[i, 'title_en'] = olang_title.iloc[0]['latin']
                 res.loc[i, 'title_ja'] = olang_title.iloc[0]['title']
+        
+        if zh_q and not pd.isna(res['title_en'][i]):
+            res.loc[i, 'title_zh'] = res['title_en'][i]
     
     res['title_ja'] = res['title_ja'].fillna('')
     res['title_en'] = res['title_en'].fillna('')
