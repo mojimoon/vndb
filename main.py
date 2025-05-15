@@ -84,6 +84,19 @@ def parallel_partial_order(n_workers=cpu_count()):
                 if tv[i, j] >= min_common_vote:
                     f.write(f"{i},{j},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
 
+def compute_dist(ulist_vns):
+    plain = np.zeros((N, 11), dtype=np.int16)
+    ulist = ulist_vns.copy()
+    # vote divided by 10 then rounded
+    ulist[:, 2] //= 10
+    for i in range(ulist.shape[0]):
+        plain[ulist[i, 1], ulist[i, 2]] += 1
+    votes = np.sum(plain, axis=1)
+    avg = np.sum(plain * np.arange(11), axis=1) / votes
+    std = np.sqrt(np.sum(plain * (np.arange(11) - avg[:, None]) ** 2, axis=1) / votes)
+    df = pd.DataFrame({'vid': np.arange(N), **{f'_{i}': plain[:, i] for i in range(1, 11)}, 'votes': votes, 'avg': avg, 'std': std})
+    df.to_csv(os.path.join(out_dir, "dist.csv"), index=False, float_format='%.4f')
+
 def partial_order():
     vn = read("vn")
     vn = vn[vn['c_rating'] != '\\N']
@@ -103,7 +116,9 @@ def partial_order():
     ulist_vns['idx'] = ulist_vns['vid'].map(vid2idx)
     ulist_vns = ulist_vns[['uid', 'idx', 'vote']].to_numpy()
     print(f"# of ulist_vns: {len(ulist_vns)}")
-
+    compute_dist(ulist_vns)
+    sys.exit(0)
+    
     pv, nv, tv = np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16)
     _begin = 0
     _end = 1
@@ -248,6 +263,7 @@ def random_walk_score(data, N, alpha=0.85, max_iter=100, eps=1e-6):
         scores = alpha * mat.T.dot(scores) + (1 - alpha) / N
         if np.linalg.norm(scores - last_scores, 1) < eps:
             break
+    scores *= N
     return scores
 
 def elo_rating_score(data, N, K=32, base=1500, divisor=400):
@@ -311,18 +327,18 @@ def full_order():
 
     scores = classical_score(po, N, appear)
     pagerank = random_walk_score(po, N)
-    elo = elo_rating_score(po, N, base=5000, divisor=1500)
+    elo = elo_rating_score(po, N, base=5000, divisor=1000)
     entropy = entropy_weighted_score(po, N)
 
-    res = pd.DataFrame({ 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
+    res = pd.DataFrame({ 'idx': np.arange(N), 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
     res = res[res['appear'] > 0]
-    res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'c_average', 'alias']], left_on='vid', right_on='id', how='left')
+    res = res.merge(vn[['id', 'c_votecount', 'alias']], left_on='vid', right_on='id', how='left')
     associate_title(res)
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
 def main():
-    # partial_order()
-    full_order()
+    partial_order()
+    # full_order()
 
 if __name__ == "__main__":
     main()
