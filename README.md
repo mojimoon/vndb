@@ -63,8 +63,8 @@ python main.py
 3. 移动文件到 `web/data` 目录下。
 
 ```bash
-mkdir -p web/data
-mv out/*.csv web/data/
+mkdir -p web/out
+mv out/*.csv web/out/
 ```
 
 4. 启动 web 服务器。
