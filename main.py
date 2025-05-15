@@ -329,52 +329,6 @@ elo_rating_score: 21.44s
 entropy_weighted_score: 2.07s
 '''
 
-def connect_title(vn):
-    vn_titles = read("vn_titles")
-    vn_titles['latin'] = vn_titles['latin'].replace('\\N', np.nan)
-    _en, _zh, _ja = vn_titles[vn_titles['lang'] == 'en'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'ja']
-    vn['title_ja'] = vn['id'].map(_ja.set_index('id')['title'])
-    vn['title_en'] = vn['id'].map(_en.set_index('id')['title'])
-    vn['title_zh'] = vn['id'].map(_zh.set_index('id')['title'])
-
-    # if zh is empty, split alias with \n and find the longest one that includes Chinese characters and does not contain kana
-    for i in range(len(vn)):
-        if pd.isna(vn['title_zh'][i]) and not pd.isna(vn['alias'][i]):
-            alias = vn['alias'][i]
-            _ = alias.split('\\n')
-            # print(f"{vn['id'][i]} is missing title_zh, alias: {_}")
-            _ = [a for a in _ if any('\u4e00' <= c <= '\u9fff' for c in a) and not any('\u3040' <= c <= '\u30ff' for c in a)]
-            _ = sorted(_, key=len, reverse=True)
-            if len(_) > 0:
-                vn.loc[i, 'title_zh'] = _[0]
-                # print(f"found title_zh: {vn['title_zh'][i]}")
-    
-    # if both en and jp are empty, search for first title of that id, and take its 'latin' title
-    for i in range(len(vn)):
-        if pd.isna(vn['title_en'][i]) and pd.isna(vn['title_ja'][i]):
-            _id = vn['id'][i]
-            titles = vn_titles[vn_titles['id'] == _id]
-            # print(f"{_id} is missing title_en and title_ja")
-            if len(titles) > 0:
-                vn.loc[i, 'title_en'] = titles.iloc[0]['latin']
-                vn.loc[i, 'title_ja'] = titles.iloc[0]['title']
-                # print(f"found title_en: {vn['title_en'][i]}, title_ja: {vn['title_ja'][i]}")
-    
-    # remove duplicate titles
-    vn['title_zh'] = np.where(vn['title_zh'] == vn['title_en'], '', vn['title_zh'])
-    vn['title_ja'] = np.where(vn['title_ja'] == vn['title_en'], '', vn['title_ja'])
-    vn['title_ja'] = np.where(vn['title_ja'] == vn['title_zh'], '', vn['title_ja'])
-
-    vn['title_ja'].fillna('', inplace=True)
-    vn['title_zh'].fillna('', inplace=True)
-    vn['title_en'].fillna('', inplace=True)
-
-    # for search = title_ja + title_zh + title_en + alias joined with \n
-    vn['search'] = np.where(vn['title_ja'] == '', '', vn['title_ja'] + '\n') + np.where(vn['title_zh'] == '', '', vn['title_zh'] + '\n') + np.where(vn['title_en'] == '', '', vn['title_en'] + '\n') + np.where(vn['alias'] == '', '', vn['alias'])
-    # vn['search'] = np.where(np.isnan(vn['title_ja']), '', vn['title_ja'] + '\n') + np.where(np.isnan(vn['title_zh']), '', vn['title_zh'] + '\n') + np.where(np.isnan(vn['title_en']), '', vn['title_en'] + '\n') + np.where(np.isnan(vn['alias']), '', vn['alias'])
-    vn['search'] = vn['search'].str.lower()
-
-
 def full_order():
     po = po_load()
     vid = vid_load()
@@ -393,33 +347,59 @@ def full_order():
 
     res = pd.DataFrame({ 'idx': np.arange(N), 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
 
-    # merge dist with c_rating. Then sort by (1) res.c_rating (2) dist.avg and create rank
-    dist = pd.read_csv(os.path.join(out_dir, "dist.csv"))
-    dist['c_rating'] = vn['c_rating'].astype(np.float16) / 100
-    dist.sort_values(by=['c_rating', 'avg'], ascending=[False, False], inplace=True)
-    dist['rank'] = np.arange(len(dist))
-    res = res.merge(dist[['idx', 'c_rating', 'rank']], left_on='idx', right_on='idx', how='left')
-    res = res[res['appear'] > 0]
-
-    res = res.merge(vn[['id', 'c_votecount', 'alias']], left_on='vid', right_on='id', how='left')
-    connect_title(res)
-    res.drop(columns=['id'], inplace=True)
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
-# def create_search_string():
-#     res = pd.read_csv(os.path.join(out_dir, "full_order.csv"))
-#     res['title_ja'].fillna('', inplace=True)
-#     res['title_zh'].fillna('', inplace=True)
-#     res['title_en'].fillna('', inplace=True)
-#     res['alias'].fillna('', inplace=True)
-#     res['search'] = np.where(res['title_ja'] == '', '', res['title_ja'] + '\\n') + np.where(res['title_zh'] == '', '', res['title_zh'] + '\\n') + np.where(res['title_en'] == '', '', res['title_en'] + '\\n') + np.where(res['alias'] == '', '', res['alias'])
-#     res['search'] = res['search'].str.lower()
-#     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
+def postfix():
+    vid = vid_load()
+    vn = read("vn")
+    vn = vn[vn['id'].isin(vid)]
+    
+    res = pd.read_csv(os.path.join(out_dir, "full_order.csv"))
+    res = res[['idx', 'vid', 'appear', 'total', 'percentage', 'simple', 'weighted_simple', 'pagerank', 'elo', 'entropy']]
+    assert vn.shape[0] == res.shape[0]
+    vn.reset_index(drop=True, inplace=True)
+
+    vn_titles = read("vn_titles")
+    olang = vn['olang']
+    _ja, _zh, _en = vn_titles[vn_titles['lang'] == 'ja'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'en']
+    res['title_ja'] = res['vid'].map(_ja.set_index('id')['title'])
+    res['title_en'] = res['vid'].map(_en.set_index('id')['title'])
+    res['title_zh'] = res['vid'].map(_zh.set_index('id')['title'])
+
+    for i in range(len(res)):
+        if pd.isna(res['title_zh'][i]) and not pd.isna(vn['alias'][i]):
+            alias = vn['alias'][i]
+            _ = alias.split('\\n')
+            _ = [a for a in _ if any('\u4e00' <= c <= '\u9fff' for c in a) and not any('\u3040' <= c <= '\u30ff' for c in a)]
+            # _ = sorted(_, key=len, reverse=True)
+            if len(_) > 0:
+                res.loc[i, 'title_zh'] = _[0]
+
+        if pd.isna(res['title_en'][i]) and pd.isna(res['title_ja'][i]):
+            olang_title = vn_titles[(vn_titles['id'] == res['vid'][i]) & (vn_titles['lang'] == olang[i])]
+            if len(olang_title) > 0:
+                res.loc[i, 'title_en'] = olang_title.iloc[0]['latin']
+                res.loc[i, 'title_ja'] = olang_title.iloc[0]['title']
+    
+    res['title_ja'] = res['title_ja'].fillna('')
+    res['title_en'] = res['title_en'].fillna('')
+    res['title_zh'] = res['title_zh'].fillna('')
+    res['alias'] = vn['alias'].fillna('')
+    res['search'] = res['title_ja'] + '\\n' + res['title_en'] + '\\n' + res['title_zh'] + '\\n' + res['alias']
+    res['search'] = res['search'].str.replace('\\n', ' ', regex=False)
+
+    res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'c_average']], left_on='vid', right_on='id', how='left')
+    res.drop(columns=['id'], inplace=True)
+    res['c_rating'] = res['c_rating'].astype(np.int16) / 100
+    res['c_average'] = res['c_average'].astype(np.int16) / 100
+    res.sort_values(by=['c_rating', 'c_average'], ascending=[False, False], inplace=True)
+    res['rank'] = np.arange(1, len(res) + 1)
+    res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
 def main():
     # partial_order()
     # full_order()
-    # create_search_string()
+    postfix()
 
 if __name__ == "__main__":
     main()
