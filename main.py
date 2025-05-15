@@ -1,5 +1,4 @@
 import os
-# import sys
 import time
 import numpy as np
 import pandas as pd
@@ -27,7 +26,7 @@ def read(table_name):
     return df
 
 min_vote = 30
-min_common_vote = 3
+min_common_vote = 5
 N = 0
 
 def process_user(ulist_vns):
@@ -167,6 +166,20 @@ def vid_load():
     vid = np.loadtxt(os.path.join(out_dir, "vid.txt"), dtype=str)
     return vid
 
+def vid_reduce():
+    vid = np.loadtxt(os.path.join(out_dir, "vid.txt"), dtype=str)
+    print(f"# of vid: {len(vid)}")
+    appear = np.zeros(len(vid))
+    po = pd.read_csv(os.path.join(out_dir, "partial_order.csv"))
+    for i, j, pv, nv, tv in po.to_numpy():
+        appear[i] += 1
+        appear[j] += 1
+    indices = np.where(appear > 0)[0]
+    print(f"# of filtered vid: {len(indices)}")
+    vid, appear = vid[indices], appear[indices]
+    df = pd.DataFrame({'vid': vid, 'appear': appear})
+    df.to_csv(os.path.join(out_dir, "vid.csv"), index=False)
+
 def classical_score(data, N):
     _dv = data[:, 2] - data[:, 3]  # dv = pv - nv
     scores = np.zeros((N, 4))
@@ -213,8 +226,14 @@ def random_walk_score(data, N, alpha=0.85, max_iter=100, eps=1e-6):
             continue
         mat[i, j] += pv / n
         mat[j, i] += nv / n
-    mat = mat / mat.sum(axis=1, keepdims=True)
+
+    row_sums = mat.sum(axis=1, keepdims=True)
+    dead_ends = (row_sums == 0)
+    with np.errstate(invalid='ignore'):
+        mat = mat / row_sums
+    mat[dead_ends.flatten(), :] = 1.0 / N
     mat[np.isnan(mat)] = 0
+
     scores = np.ones(N) / N
     for _ in range(max_iter):
         last_scores = scores.copy()
@@ -223,16 +242,16 @@ def random_walk_score(data, N, alpha=0.85, max_iter=100, eps=1e-6):
             break
     return scores
 
-def elo_rating_score(data, N, K=32, base=1500):
+def elo_rating_score(data, N, K=32, base=1500, divisor=400):
     rating = np.full(N, base)
     for row in data:
         i, j, pv, nv, tv = row
         for _ in range(pv):
-            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / 400))
+            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
             rating[i] += K * (1 - E0)
             rating[j] += K * (0 - (1 - E0))
         for _ in range(nv):
-            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / 400))
+            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
             rating[i] += K * (0 - E0)
             rating[j] += K * (1 - (1 - E0))
     return rating
@@ -272,24 +291,36 @@ def associate_title(vn):
     vn['title_ja'] = vn['id'].map(_ja.set_index('id')['title'])
 
 def full_order():
-    po = po_load(2000)
+    # po = po_load(2000)
+    # vid = vid_load()
+    # N = len(vid)
+    # vn = read("vn")
+    # vn = vn[vn['id'].isin(vid)]
+    
+    # scores = classical_score(po, N)
+    # pagerank = random_walk_score(po, N)
+    # elo = elo_rating_score(po, N, K=64, divisor=800)
+    # entropy = entropy_weighted_score(po, N)
+    # appear = np.zeros(N)
+    # for i, j, pv, nv, tv in po:
+    #     appear[i] += 1
+    #     appear[j] += 1
+
+    # res = pd.DataFrame({ 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
+    # res = res[res['appear'] > 0]
+    # res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'c_average', 'alias']], left_on='vid', right_on='id', how='left')
+    # associate_title(res)
+    # res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
+
+    po = po_load()
     vid = vid_load()
     N = len(vid)
-    vn = read("vn")
-    vn = vn[vn['id'].isin(vid)]
-    
-    scores = classical_score(po, N)
-    pagerank = random_walk_score(po, N)
-    elo = elo_rating_score(po, N)
-    entropy = entropy_weighted_score(po, N)
-
-    res = pd.DataFrame({ 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy })
-    res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'c_average', 'alias']], left_on='vid', right_on='id', how='left')
-    res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False)
 
 def main():
     # partial_order()
-    full_order()
+    # full_order()
+    # vid_reduce()
+    po_reduce()
 
 if __name__ == "__main__":
     main()
