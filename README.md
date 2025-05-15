@@ -60,11 +60,10 @@ pip install -r requirements.txt
 python main.py
 ```
 
-3. 移动文件到 `web/data` 目录下。
+3. 移动文件到 web 目录。
 
 ```bash
-mkdir -p web/out
-mv out/*.csv web/out/
+mv out/*.csv web/public/out/
 ```
 
 4. 启动 web 服务器。

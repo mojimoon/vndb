@@ -6,5 +6,4 @@ rm db.tar.zst
 pip install -r requirements.txt
 python main.py
 
-mkdir -p web/out
-mv out/*.csv web/out/
+mv out/*.csv web/public/out/
