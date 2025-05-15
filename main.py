@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from multiprocessing import Pool, cpu_count
 from scipy.sparse import dok_matrix
+from tqdm import tqdm
 
 db_dir = 'db/db'
 out_dir = 'out'
@@ -26,8 +27,9 @@ def read(table_name):
 
 min_vote = 30
 min_common_vote = 3
+N = 0
 
-def process_user(ulist_vns, N):
+def process_user(ulist_vns):
     pv, nv, tv = dok_matrix((N, N), dtype=np.int16), dok_matrix((N, N), dtype=np.int16), dok_matrix((N, N), dtype=np.int16)
     # print(ulist_vns.iloc[0, 0])
     ulist = ulist_vns[['idx', 'vote']].to_numpy()
@@ -43,13 +45,18 @@ def process_user(ulist_vns, N):
             tv[si, sj] += 1
     return pv, nv, tv
 
-def partial_order(n_workers=cpu_count()):
+def parallel_partial_order(n_workers=cpu_count()):
     vn = read("vn")
     vn = vn[vn['c_rating'] != '\\N']
     vn['c_rating'] = vn['c_rating'].astype(int)
     vn = vn[vn['c_rating'] >= min_vote]
     print(f"# of vn: {len(vn)}")
     vid2idx = {vid: i for i, vid in enumerate(vn['id'])}
+    with open(os.path.join(out_dir, "vid.txt"), "w") as f:
+        for vid in vid2idx:
+            f.write(f"{vid}\n")
+    global N
+    N = len(vn)
 
     ulist_vns = read("ulist_vns")
     ulist_vns = ulist_vns[ulist_vns['vid'].isin(vn['id']) & (ulist_vns['vote'] != '\\N')]
@@ -60,15 +67,70 @@ def partial_order(n_workers=cpu_count()):
 
     grouped = [group for _, group in ulist_vns.groupby('uid')]
     print(f"# of groups: {len(grouped)}")
-    N = len(vn)
     with Pool(n_workers) as pool:
-        results = pool.starmap(process_user, [(group, N) for group in grouped])
+        results = pool.imap(process_user, grouped)
+        # results = list(tqdm(pool.imap(process_user, grouped), total=len(grouped), desc="Processing users"))
     
     pv, nv, tv = dok_matrix((N, N), dtype=np.int16), dok_matrix((N, N), dtype=np.int16), dok_matrix((N, N), dtype=np.int16)
     for pvi, nvi, tvi in results:
         pv += pvi
         nv += nvi
         tv += tvi
+    with open(os.path.join(out_dir, "partial_order.csv"), "w") as f:
+        f.write("x,y,pv,nv,tv\n")
+        for i in range(N):
+            for j in range(i + 1, N):
+                if tv[i, j] > 0:
+                    f.write(f"{i},{j},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
+
+def partial_order():
+    vn = read("vn")
+    vn = vn[vn['c_rating'] != '\\N']
+    vn['c_rating'] = vn['c_rating'].astype(int)
+    vn = vn[vn['c_rating'] >= min_vote]
+    print(f"# of vn: {len(vn)}")
+    vid2idx = {vid: i for i, vid in enumerate(vn['id'])}
+    with open(os.path.join(out_dir, "vid.txt"), "w") as f:
+        for vid in vid2idx:
+            f.write(f"{vid}\n")
+    global N
+    N = len(vn)
+
+    ulist_vns = read("ulist_vns")
+    ulist_vns = ulist_vns[ulist_vns['vid'].isin(vn['id']) & (ulist_vns['vote'] != '\\N')]
+    ulist_vns['vote'] = ulist_vns['vote'].astype(int)
+    ulist_vns['idx'] = ulist_vns['vid'].map(vid2idx)
+    ulist_vns = ulist_vns[['uid', 'idx', 'vote']].to_numpy()
+    print(f"# of ulist_vns: {len(ulist_vns)}")
+
+    pv, nv, tv = np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16)
+    _begin = 0
+    _end = 1
+    while _end < len(ulist_vns):
+        if ulist_vns[_begin, 0] == ulist_vns[_end, 0]:
+            _end += 1
+        else:
+            for i in range(_begin, _end - 1):
+                ri, si = ulist_vns[i, 2], ulist_vns[i, 1]
+                for j in range(i + 1, _end):
+                    rj, sj = ulist_vns[j, 2], ulist_vns[j, 1]
+                    if ri > rj:
+                        pv[si, sj] += 1
+                    elif ri < rj:
+                        nv[si, sj] += 1
+                    tv[si, sj] += 1
+            _begin = _end
+            _end += 1
+            # print(_begin)
+    for i in range(_begin, _end - 1):
+        ri, si = ulist_vns[i, 2], ulist_vns[i, 1]
+        for j in range(i + 1, _end):
+            rj, sj = ulist_vns[j, 2], ulist_vns[j, 1]
+            if ri > rj:
+                pv[si, sj] += 1
+            elif ri < rj:
+                nv[si, sj] += 1
+            tv[si, sj] += 1
     with open(os.path.join(out_dir, "partial_order.csv"), "w") as f:
         f.write("x,y,pv,nv,tv\n")
         for i in range(N):
