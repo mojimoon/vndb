@@ -209,6 +209,8 @@ def random_walk_score(data, N, alpha=0.85, max_iter=100, eps=1e-6):
     for row in data:
         i, j, pv, nv, tv = row
         n = pv + nv
+        if n == 0:
+            continue
         mat[i, j] += pv / n
         mat[j, i] += nv / n
     mat = mat / mat.sum(axis=1, keepdims=True)
@@ -221,8 +223,8 @@ def random_walk_score(data, N, alpha=0.85, max_iter=100, eps=1e-6):
             break
     return scores
 
-def elo_rating_score(data, N, K=32):
-    rating = np.full(N, 1500.0)
+def elo_rating_score(data, N, K=32, base=1500):
+    rating = np.full(N, base)
     for row in data:
         i, j, pv, nv, tv = row
         for _ in range(pv):
@@ -244,43 +246,50 @@ def entropy_weighted_score(data, N):
     ent = -(p * np.log2(p + 1e-10) + q * np.log2(q + 1e-10))
     for idx, row in enumerate(data):
         i, j, pv, nv, tv = row
+        if pv + nv == 0:
+            continue
         scores[i, 0] += s[idx] * ent[idx]
         scores[j, 0] -= s[idx] * ent[idx]
         scores[i, 1] += ent[idx]
         scores[j, 1] += ent[idx]
     return scores[:, 0] / (scores[:, 1] + 1e-10)
 
-def performance_test():
+'''
+performance
+condition: po_load(2000), 725557 partial orders
+classical_score: 11.58s
+bradley_terry_score: 315.08s
+random_walk_score: 5.08s
+elo_rating_score: 21.44s
+entropy_weighted_score: 2.07s
+'''
+
+def associate_title(vn):
+    vn_titles = read("vn_titles")
+    _en, _zh, _ja = vn_titles[vn_titles['lang'] == 'en'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'ja']
+    vn['title_en'] = vn['id'].map(_en.set_index('id')['title'])
+    vn['title_zh'] = vn['id'].map(_zh.set_index('id')['title'])
+    vn['title_ja'] = vn['id'].map(_ja.set_index('id')['title'])
+
+def full_order():
     po = po_load(2000)
     vid = vid_load()
     N = len(vid)
-    t0 = time.time()
+    vn = read("vn")
+    vn = vn[vn['id'].isin(vid)]
+    
     scores = classical_score(po, N)
-    t1 = time.time()
-    print(f"Classical score time: {t1 - t0:.2f}s")
-    # t0 = time.time()
-    # skill = bradley_terry_score(po, N)
-    # t1 = time.time()
-    # print(f"Bradley-Terry score time: {t1 - t0:.2f}s")
-    t0 = time.time()
     pagerank = random_walk_score(po, N)
-    t1 = time.time()
-    print(f"Random walk score time: {t1 - t0:.2f}s")
-    t0 = time.time()
     elo = elo_rating_score(po, N)
-    t1 = time.time()
-    print(f"Elo rating score time: {t1 - t0:.2f}s")
-    t0 = time.time()
     entropy = entropy_weighted_score(po, N)
-    t1 = time.time()
-    print(f"Entropy weighted score time: {t1 - t0:.2f}s")
 
-def full_order():
-    pass
+    res = pd.DataFrame({ 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy })
+    res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'c_average', 'alias']], left_on='vid', right_on='id', how='left')
+    res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False)
 
 def main():
     # partial_order()
-    performance_test()
+    full_order()
 
 if __name__ == "__main__":
     main()
