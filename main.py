@@ -382,15 +382,9 @@ def full_order():
     connect_title(res)
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
-def partial_update():
-    res = pd.read_csv(os.path.join(out_dir, "full_order.csv"))
-    connect_title(res)
-    res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
-
 def main():
-    # partial_order()
-    # full_order()
-    partial_update()
+    partial_order()
+    full_order()
 
 if __name__ == "__main__":
     main()
