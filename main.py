@@ -326,21 +326,39 @@ entropy_weighted_score: 2.07s
 
 def connect_title(vn):
     vn_titles = read("vn_titles")
+    vn_titles['latin'] = vn_titles['latin'].replace('\\N', np.nan)
     _en, _zh, _ja = vn_titles[vn_titles['lang'] == 'en'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'ja']
     vn['title_ja'] = vn['id'].map(_ja.set_index('id')['title'])
     vn['title_en'] = vn['id'].map(_en.set_index('id')['title'])
     vn['title_zh'] = vn['id'].map(_zh.set_index('id')['title'])
-    vn['title_zh'] = np.where(vn['title_zh'] == vn['title_en'], '', vn['title_zh'])
-    vn['title_zh'] = np.where(vn['title_zh'] == vn['title_ja'], '', vn['title_zh'])
-    vn['title_en'] = np.where(vn['title_en'] == '', vn['title_ja'], vn['title_en'])
-    # if both title_en and title_ja are missing, search for first title of that id, and take its 'latin' title
+
+    # if zh is empty, split alias with \n and find the longest one that includes Chinese characters and does not contain kana
     for i in range(len(vn)):
-        if not vn['title_en'][i] and not vn['title_ja'][i]:
+        if pd.isna(vn['title_zh'][i]) and not pd.isna(vn['alias'][i]):
+            alias = vn['alias'][i]
+            _ = alias.split('\\n')
+            # print(f"{vn['id'][i]} is missing title_zh, alias: {_}")
+            _ = [a for a in _ if any('\u4e00' <= c <= '\u9fff' for c in a) and not any('\u3040' <= c <= '\u30ff' for c in a)]
+            _ = sorted(_, key=len, reverse=True)
+            if len(_) > 0:
+                vn.loc[i, 'title_zh'] = _[0]
+                # print(f"found title_zh: {vn['title_zh'][i]}")
+    
+    # if both en and jp are empty, search for first title of that id, and take its 'latin' title
+    for i in range(len(vn)):
+        if pd.isna(vn['title_en'][i]) and pd.isna(vn['title_ja'][i]):
             _id = vn['id'][i]
             titles = vn_titles[vn_titles['id'] == _id]
+            print(f"{_id} is missing title_en and title_ja")
             if len(titles) > 0:
-                vn['title_jp'][i] = titles.iloc[0]['title']
-                vn['title_en'][i] = titles.iloc[0]['latin']
+                vn.loc[i, 'title_en'] = titles.iloc[0]['latin']
+                vn.loc[i, 'title_ja'] = titles.iloc[0]['title']
+                print(f"found title_en: {vn['title_en'][i]}, title_ja: {vn['title_ja'][i]}")
+    
+    # remove repeating titles. if zh == en, remove zh. if zh == ja, remove zh. if en == ja, remove en.
+    vn['title_zh'] = np.where(vn['title_zh'] == vn['title_en'], '', vn['title_zh'])
+    vn['title_ja'] = np.where(vn['title_ja'] == vn['title_en'], '', vn['title_ja'])
+    vn['title_ja'] = np.where(vn['title_ja'] == vn['title_zh'], '', vn['title_ja'])
 
 def full_order():
     po = po_load()
@@ -371,7 +389,8 @@ def partial_update():
 
 def main():
     # partial_order()
-    full_order()
+    # full_order()
+    partial_update()
 
 if __name__ == "__main__":
     main()
