@@ -47,9 +47,9 @@ def process_user(ulist_vns):
 
 def parallel_partial_order(n_workers=cpu_count()):
     vn = read("vn")
-    vn = vn[vn['c_rating'] != '\\N']
-    vn['c_rating'] = vn['c_rating'].astype(int)
-    vn = vn[vn['c_rating'] >= min_vote]
+    vn = vn[vn['c_votecount'] != '\\N']
+    vn['c_votecount'] = vn['c_votecount'].astype(int)
+    vn = vn[vn['c_votecount'] >= min_vote]
     print(f"# of vn: {len(vn)}")
     vid2idx = {vid: i for i, vid in enumerate(vn['id'])}
     with open(os.path.join(out_dir, "vid.txt"), "w") as f:
@@ -324,12 +324,23 @@ elo_rating_score: 21.44s
 entropy_weighted_score: 2.07s
 '''
 
-def associate_title(vn):
+def connect_title(vn):
     vn_titles = read("vn_titles")
     _en, _zh, _ja = vn_titles[vn_titles['lang'] == 'en'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'ja']
+    vn['title_ja'] = vn['id'].map(_ja.set_index('id')['title'])
     vn['title_en'] = vn['id'].map(_en.set_index('id')['title'])
     vn['title_zh'] = vn['id'].map(_zh.set_index('id')['title'])
-    vn['title_ja'] = vn['id'].map(_ja.set_index('id')['title'])
+    vn['title_zh'] = np.where(vn['title_zh'] == vn['title_en'], '', vn['title_zh'])
+    vn['title_zh'] = np.where(vn['title_zh'] == vn['title_ja'], '', vn['title_zh'])
+    vn['title_en'] = np.where(vn['title_en'] == '', vn['title_ja'], vn['title_en'])
+    # if both title_en and title_ja are missing, search for first title of that id, and take its 'latin' title
+    for i in range(len(vn)):
+        if not vn['title_en'][i] and not vn['title_ja'][i]:
+            _id = vn['id'][i]
+            titles = vn_titles[vn_titles['id'] == _id]
+            if len(titles) > 0:
+                vn['title_jp'][i] = titles.iloc[0]['title']
+                vn['title_en'][i] = titles.iloc[0]['latin']
 
 def full_order():
     po = po_load()
@@ -344,13 +355,13 @@ def full_order():
 
     scores = classical_score(po, N, appear)
     pagerank = random_walk_score(po, N)
-    elo = elo_rating_score_fast(po, N, base=5000, divisor=1000)
+    elo = elo_rating_score_fast(po, N, base=1500, divisor=400)
     entropy = entropy_weighted_score(po, N)
 
     res = pd.DataFrame({ 'idx': np.arange(N), 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
     res = res[res['appear'] > 0]
     res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'alias']], left_on='vid', right_on='id', how='left')
-    associate_title(res)
+    connect_title(res)
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
 def main():
