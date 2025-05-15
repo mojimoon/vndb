@@ -2,6 +2,7 @@ import os
 import sys
 import numpy as np
 import pandas as pd
+from multiprocessing import Pool, cpu_count
 
 db_dir = 'db/db'
 out_dir = 'out'
@@ -31,59 +32,81 @@ def read(table_name):
 min_vote = 30
 min_common_vote = 3
 
-'''
-def rela():
-    df0 = pd.read_csv(INPUT_0)[["user_id", "subject_id", "rating"]].reset_index(drop=True)
-    df0 = df0.sort_values(by=["user_id", "subject_id"]).reset_index(drop=True)
-    df0 = df0[df0["subject_id"].isin(ids)]
-    df0 = df0[df0["rating"] > 0]
-    len0 = len(df0) # 7770854
+# def partial_order():
+#     vn = read("vn")
+#     vn['c_rating'] = vn['c_rating'].replace('\\N', 0).astype(int)
+#     vn = vn[vn['c_rating'] >= min_vote]
+#     vid2idx = {}
+#     for i, vid in enumerate(vn['id']):
+#         vid2idx[vid] = i
+#     print(f"# of vn: {len(vn)}")
+#     print(f"estimated memory usage: {len(vn) * len(vn) * 6 / 1024 / 1024:.3f} MB")
+    
+#     ulist_vns = read("ulist_vns")
+#     ulist_vns = ulist_vns[ulist_vns['vid'].isin(vn['id']) & (ulist_vns['vote'] != '\\N')]
+#     ulist_vns['vote'] = ulist_vns['vote'].astype(int)
+#     ulist_vns['idx'] = ulist_vns['vid'].map(vid2idx)
+#     # by default grouped by uid, vid ascendingly
+#     ulist = ulist_vns[['uid', 'idx', 'vote']].to_numpy()
+#     print(f"# of ulist: {len(ulist)}")
 
-    last = time.time()
-    print("time elapsed: %.2f" % (last - timer))
+#     pv = np.zeros((len(vn), len(vn)), dtype=np.int16) # int16 = 2 bytes
+#     nv = np.zeros((len(vn), len(vn)), dtype=np.int16)
+#     tv = np.zeros((len(vn), len(vn)), dtype=np.int16)
+#     _begin = 0
+#     _end = 1
 
-    pv = {} # relative positive votes
-    nv = {} # relative negative votes
-    tv = {} # total votes
-    arr = df0.to_numpy()
-    cur_begin = 0
-    cur_end = 1
-    # use double pointer to get this current user's records in rows [cur_begin, cur_end-1]
-    while cur_end < len0:
-        if arr[cur_end, UID] == arr[cur_begin, UID]:
-            cur_end += 1
-        else:
-            for i in range(cur_begin, cur_end - 1):
-                ri = arr[i, RAT]
-                if ri == 0:
-                    continue
-                si = arr[i, SID]
-                for j in range(i + 1, cur_end):
-                    # it is guaranteed that si < sj
-                    rj = arr[j, RAT]
-                    if rj == 0:
-                        continue
-                    sj = arr[j, SID]
-                    if ri > rj:
-                        pv[(si, sj)] = pv.get((si, sj), 0) + 1
-                    elif ri < rj:
-                        nv[(si, sj)] = nv.get((si, sj), 0) + 1
-                    tv[(si, sj)] = tv.get((si, sj), 0) + 1
-            cur_begin = cur_end
-            cur_end += 1
-            # print cur_begin every minute
-            if time.time() - last > 59:
-                print("%d %.0f" % (cur_begin, time.time() - timer))
-                last = time.time()
+#     while _end < len(ulist):
+#         if ulist[_end, 0] == ulist[_begin, 0]:
+#             _end += 1
+#         else:
+#             for i in range(_begin, _end - 1):
+#                 ri = ulist[i, 2]
+#                 si = ulist[i, 1]
+#                 for j in range(i + 1, _end):
+#                     rj = ulist[j, 2]
+#                     sj = ulist[j, 1]
+#                     if ri > rj: # guaranteed that si < sj
+#                         pv[si, sj] += 1
+#                     elif ri < rj:
+#                         nv[si, sj] += 1
+#                     tv[si, sj] += 1
+#             # print(f"(begin, end) = ({_begin}, {_end})")
+#             _begin = _end
+#             _end += 1
+    
+#     with open(os.path.join(out_dir, "partial_order.csv"), "w") as f:
+#         f.write("x,y,pv,nv,tv\n")
+#         for i in range(len(vn)):
+#             for j in range(i + 1, len(vn)):
+#                 if tv[i, j] > 0:
+#                     print(f"({i}, {j}) {pv[i, j]} {nv[i, j]} {tv[i, j]}")
+#                     f.write(f"{vn.iloc[i, 0]},{vn.iloc[j, 0]},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
 
-    print("time elapsed: %.2f" % (time.time() - timer))
+def xy_to_uppertrig(x, y, n):
+    return (x * n) + y - ((x + 1) * (x + 2)) // 2
 
-    with open(TMP_2, "w") as f:
-        for (si, sj), v in tv.items():
-            f.write("%d,%d,%d,%d\n" % (si, sj, v, pv.get((si, sj), 0) - nv.get((si, sj), 0)))
-'''
+def uppertrig_to_xy(u, n):
+    # max u(x) = ((n - 1) + (n - 2) + ... + (n - x)) / 2 = x * (2 * n - x - 1) / 2 >= u
+    # -1/2 * x^2 + (n - 1/2) * x - u >= 0 => x^2 + (1 - 2n) * x + 2u <= 0
+    # x = (-b + sqrt(b^2 - 4ac)) / 2a
+    x = int((2 * n - 1 - np.sqrt((2 * n - 1) ** 2 - 8 * u)) / 2)
+    # max_ux = (x * (2 * n - x - 1)) // 2
+    # y = u - max_ux + x + 1
+    y = u - (x * (2 * n - x - 1)) // 2 + x + 1
+    return x, y
 
-def partial_order():
+def test_uppertrig():
+    n = 5
+    for i in range(n):
+        for j in range(i + 1, n):
+            idx = xy_to_uppertrig(i, j, n)
+            x, y = uppertrig_to_xy(idx, n)
+            print(f"({i}, {j}) -> {idx} -> ({x}, {y})")
+
+def process_user(ulist, vn_len):
+
+def parallel_partial_order(n_workers=None):
     vn = read("vn")
     vn['c_rating'] = vn['c_rating'].replace('\\N', 0).astype(int)
     vn = vn[vn['c_rating'] >= min_vote]
@@ -91,49 +114,23 @@ def partial_order():
     for i, vid in enumerate(vn['id']):
         vid2idx[vid] = i
     print(f"# of vn: {len(vn)}")
-    print(f"estimated memory usage: {len(vn) * len(vn) * 6 / 1024 / 1024} MB")
     
     ulist_vns = read("ulist_vns")
     ulist_vns = ulist_vns[ulist_vns['vid'].isin(vn['id']) & (ulist_vns['vote'] != '\\N')]
     ulist_vns['vote'] = ulist_vns['vote'].astype(int)
     ulist_vns['idx'] = ulist_vns['vid'].map(vid2idx)
     # by default grouped by uid, vid ascendingly
-    ulist = ulist_vns[['uid', 'idx', 'vote']].to_numpy()
-    print(f"# of ulist: {len(ulist)}")
-
-    pv = np.zeros((len(vn), len(vn)), dtype=np.int16) # int16 = 2 bytes
-    nv = np.zeros((len(vn), len(vn)), dtype=np.int16)
-    tv = np.zeros((len(vn), len(vn)), dtype=np.int16)
-    _begin = 0
-    _end = 1
-
-    while _end < len(ulist):
-        if ulist[_end, 0] == ulist[_begin, 0]:
-            _end += 1
-        else:
-            for i in range(_begin, _end - 1):
-                ri = ulist[i, 2]
-                # if ri == 0:
-                #     continue
-                si = ulist[i, 1]
-                for j in range(i + 1, _end):
-                    rj = ulist[j, 2]
-                    # if rj == 0:
-                    #     continue
-                    sj = ulist[j, 1]
-                    if ri > rj: # guaranteed that si < sj
-                        pv[si, sj] += 1
-                    elif ri < rj:
-                        nv[si, sj] += 1
-                    tv[si, sj] += 1
-            _begin = _end
-            _end += 1
-    
-    with open(os.path.join(out_dir, "partial_order.txt"), "w") as f:
-        for i in range(len(vn)):
-            for j in range(i + 1, len(vn)):
-                if tv[i, j] > 0:
-                    f.write(f"{i},{j},{tv[i, j]},{pv[i, j]},{nv[i, j]}\n")
+    ulist_vns = ulist_vns[['uid', 'idx', 'vote']]
+    print(f"# of ulist: {len(ulist_vns)}")
+    # group by uid
+    grouped = [group for _, group in ulist_vns.groupby('uid')]
+    if n_workers is None:
+        n_workers = cpu_count()
+    print(f"Using {n_workers} workers")
+    print(f"# of groups: {len(grouped)}")
+    # with Pool(n_workers) as pool:
+    #     results = pool.starmap(process_user_group, [(group.to_numpy(), len(vn)) for group in grouped])
+    # n
 
 if __name__ == "__main__":
-    partial_order()
+    parallel_partial_order()
