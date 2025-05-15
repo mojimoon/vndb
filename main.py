@@ -1,5 +1,6 @@
 import os
-import sys
+# import sys
+import time
 import numpy as np
 import pandas as pd
 from multiprocessing import Pool, cpu_count
@@ -147,13 +148,22 @@ def po_reduce():
     print(f"# of filtered partial order: {len(po)}")
     po.to_csv(os.path.join(out_dir, "partial_order.csv"), index=False)
 
-def load_po():
+def po_stat():
+    po = pd.read_csv(os.path.join(out_dir, "partial_order.csv"))
+    for b in (3, 5, 10, 20, 30, 50, 100):
+        po_b = po[po['tv'] >= b]
+        print(f">={b}: {len(po_b)}")
+
+def po_load(id_limit=None):
     po = pd.read_csv(os.path.join(out_dir, "partial_order.csv"))
     # po = po[po['tv'] >= min_common_vote]
+    if id_limit is not None:
+        po = po[(po['x'] < id_limit) & (po['y'] < id_limit)]
+    print(f"# of partial order: {len(po)}")
     po = po.to_numpy()
     return po
 
-def load_vid():
+def vid_load():
     vid = np.loadtxt(os.path.join(out_dir, "vid.txt"), dtype=str)
     return vid
 
@@ -228,20 +238,49 @@ def elo_rating_score(data, N, K=32):
 def entropy_weighted_score(data, N):
     scores = np.zeros((N, 2))
     n = data[:, 2] + data[:, 3]
+    n = np.where(n == 0, 1, n)
     p, q = data[:, 2] / n, data[:, 3] / n
     s = p - q
     ent = -(p * np.log2(p + 1e-10) + q * np.log2(q + 1e-10))
-    for row in data:
+    for idx, row in enumerate(data):
         i, j, pv, nv, tv = row
-        scores[i, 0] += s * ent
-        scores[j, 0] -= s * ent
-        scores[i, 1] += ent
-        scores[j, 1] -= ent
+        scores[i, 0] += s[idx] * ent[idx]
+        scores[j, 0] -= s[idx] * ent[idx]
+        scores[i, 1] += ent[idx]
+        scores[j, 1] += ent[idx]
     return scores[:, 0] / (scores[:, 1] + 1e-10)
+
+def performance_test():
+    po = po_load(2000)
+    vid = vid_load()
+    N = len(vid)
+    t0 = time.time()
+    scores = classical_score(po, N)
+    t1 = time.time()
+    print(f"Classical score time: {t1 - t0:.2f}s")
+    # t0 = time.time()
+    # skill = bradley_terry_score(po, N)
+    # t1 = time.time()
+    # print(f"Bradley-Terry score time: {t1 - t0:.2f}s")
+    t0 = time.time()
+    pagerank = random_walk_score(po, N)
+    t1 = time.time()
+    print(f"Random walk score time: {t1 - t0:.2f}s")
+    t0 = time.time()
+    elo = elo_rating_score(po, N)
+    t1 = time.time()
+    print(f"Elo rating score time: {t1 - t0:.2f}s")
+    t0 = time.time()
+    entropy = entropy_weighted_score(po, N)
+    t1 = time.time()
+    print(f"Entropy weighted score time: {t1 - t0:.2f}s")
+
+def full_order():
+    pass
 
 def main():
     # partial_order()
-    po_reduce()
+    performance_test()
 
 if __name__ == "__main__":
     main()
