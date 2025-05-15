@@ -14,6 +14,7 @@ export async function GET(request: Request) {
   const parsedData = Papa.parse<FullOrder>(csv, {
     header: true,
     skipEmptyLines: true,
+    dynamicTyping: true,
   });
 
   const { searchParams } = new URL(request.url);
@@ -22,13 +23,7 @@ export async function GET(request: Request) {
   let filtered = parsedData.data;
 
   if (q) {
-    filtered = parsedData.data.filter((item) => {
-      return (
-        item.title_ja?.toLowerCase().includes(q) ||
-        item.title_en?.toLowerCase().includes(q) ||
-        item.title_zh?.toLowerCase().includes(q)
-      );
-    });
+    filtered = parsedData.data.filter((item) => item.search.includes(q));
   }
 
   return NextResponse.json({
