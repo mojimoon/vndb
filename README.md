@@ -6,11 +6,14 @@
 
 ## 背景
 
-基于偏序网络的排名算法最初由 [@eyecandy](https://bgm.tv/user/eyecandy) 提出，其核心思想是 **基于同一用户对不同作品的评分来判断作品之间的相对优劣**，而不再关注作品本身的评分分布。简而言之，PONet 认为如果在有很多人同时给作品 A 和作品 B 评分的情况下，大多数人 (>50%) 认为 A 比 B 更好，那么我们就可以认为 A 比 B 更好。
+基于偏序网络的排名算法最初由 [@eyecandy](https://bgm.tv/user/eyecandy) 提出，其核心思想是**基于同一用户对不同作品的评分来判断作品之间的相对优劣**，而不再关注作品本身的评分分布。借此，PONet 可以通过简单高效的算法给出作品的相对排名，无需利用贝叶斯平均等复杂的统计方法。
+
+简而言之，PONet 认为如果在有很多人同时给作品 A 和作品 B 评分的情况下，大多数人 (>50%) 认为 A 比 B 更好，那么我们就可以认为 A 比 B 更好。
 
 - 2022 年，@eyecanday 以 Bangumi 动画区进行了实验，并将结果发布在 [Bangumi 讨论区](https://bgm.tv/group/topic/371075)。
 - 2023 年，我用 [Bangumi15M](https://www.kaggle.com/datasets/klion23/bangumi15m) 数据集重新计算了动画区的 PONet 排名，仓库在 [mojimoon/bangumi-anime-ranking](https://github.com/mojimoon/bangumi-anime-ranking/tree/main/ponet)，结果也发布在 [Bangumi 讨论区](https://bgm.tv/group/topic/382497)。
-- 然而，由于从 Bangumi API 获取大规模数据集不便且存在访问限制，且计算耗时较长，因此以上排名一直没有得到更新。所幸，VNDB 提供了每日更新的 [database dump](https://vndb.org/d14)，使得定期更新排名成为可能，因此我决定将 PONet 算法应用于 VNDB 数据库。
+- 然而，由于从 Bangumi API 获取大规模数据集不便且存在访问限制，上述排名长期没有得到更新。
+- 所幸，VNDB 提供了每日更新的 [database dump](https://vndb.org/d14)，使得定期更新排名成为可能，因此我决定将 PONet 算法应用于 VNDB 数据库。
 
 ## 算法简述
 
@@ -25,7 +28,7 @@
 此外还有两处 hyperparameter：
 
 - `min_vote = 30`：仅当作品 A 的评分人数 `>= min_vote` 时，才会进入这个排名系统。
-- `min_common_vote = 3`：仅当 A 和 B 的共同评分人数 `>= min_common_vote` 时，才会计算 A 对 B 的积分。否则，A 对 B 的积分为 0 分，且在计算平均值时直接忽略。
+- `min_common_vote = 3`：仅当 A 和 B 的共同评分人数 `>= min_common_vote` 时，才会计算 A 对 B 的积分，否则忽略这对作品。
 
 此处选择 `min_vote = 30` 是因为在 VNDB 的评分制度下，>= 30 票的作品不使用贝叶斯平均（而是使用简单平均），且只有 >= 30 票的作品才能进入 Top 50。
 
