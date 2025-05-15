@@ -163,25 +163,25 @@ def po_load(id_limit=None):
     return po
 
 def vid_load():
-    # vid = np.loadtxt(os.path.join(out_dir, "vid.txt"), dtype=str)
-    # return vid
-    vid = pd.read_csv(os.path.join(out_dir, "vid.csv"))
-    vid, appear = vid['vid'].to_numpy(), vid['appear'].to_numpy()
-    return vid, appear
-
-def vid_reduce():
     vid = np.loadtxt(os.path.join(out_dir, "vid.txt"), dtype=str)
-    print(f"# of vid: {len(vid)}")
-    appear = np.zeros(len(vid), dtype=np.int16)
-    po = pd.read_csv(os.path.join(out_dir, "partial_order.csv"))
-    for i, j, pv, nv, tv in po.to_numpy():
-        appear[i] += 1
-        appear[j] += 1
-    indices = np.where(appear > 0)[0]
-    print(f"# of filtered vid: {len(indices)}")
-    vid, appear = vid[indices], appear[indices]
-    df = pd.DataFrame({'vid': vid, 'appear': appear})
-    df.to_csv(os.path.join(out_dir, "vid.csv"), index=False)
+    return vid
+    # vid = pd.read_csv(os.path.join(out_dir, "vid.csv"))
+    # vid, appear = vid['vid'].to_numpy(), vid['appear'].to_numpy()
+    # return vid, appear
+
+# def vid_reduce():
+#     vid = np.loadtxt(os.path.join(out_dir, "vid.txt"), dtype=str)
+#     print(f"# of vid: {len(vid)}")
+#     appear = np.zeros(len(vid), dtype=np.int16)
+#     po = pd.read_csv(os.path.join(out_dir, "partial_order.csv"))
+#     for i, j, pv, nv, tv in po.to_numpy():
+#         appear[i] += 1
+#         appear[j] += 1
+#     indices = np.where(appear > 0)[0]
+#     print(f"# of filtered vid: {len(indices)}")
+#     vid, appear = vid[indices], appear[indices]
+#     df = pd.DataFrame({'vid': vid, 'appear': appear})
+#     df.to_csv(os.path.join(out_dir, "vid.csv"), index=False)
 
 def classical_score(data, N, appear):
     _dv = data[:, 2] - data[:, 3]  # dv = pv - nv
@@ -201,10 +201,11 @@ def classical_score(data, N, appear):
         # weighted simple score = sign(X - Y) * sqrt(M)
         scores[i, 3] += np.sign(dv) * np.sqrt(tv)
         scores[j, 3] -= np.sign(dv) * np.sqrt(tv)
-    scores[:, 0] /= appear
-    scores[:, 1] /= appear
-    scores[:, 2] /= appear
-    scores[:, 3] /= appear
+    with np.errstate(invalid='ignore'):
+        scores[:, 0] /= appear
+        scores[:, 1] /= appear
+        scores[:, 2] /= appear
+        scores[:, 3] /= appear
     return scores
 
 def bradley_terry_score(data, N, max_iter=100, eps=1e-6):
@@ -299,10 +300,14 @@ def associate_title(vn):
 
 def full_order():
     po = po_load()
-    vid, appear = vid_load()
+    vid = vid_load()
     N = len(vid)
     vn = read("vn")
     vn = vn[vn['id'].isin(vid)]
+    appear = np.zeros(N, dtype=np.int16)
+    for i, j, pv, nv, tv in po:
+        appear[i] += 1
+        appear[j] += 1
 
     scores = classical_score(po, N, appear)
     pagerank = random_walk_score(po, N)
@@ -310,13 +315,14 @@ def full_order():
     entropy = entropy_weighted_score(po, N)
 
     res = pd.DataFrame({ 'vid': vid, 'total': scores[:, 0], 'percentage': scores[:, 1], 'simple': scores[:, 2], 'weighted_simple': scores[:, 3], 'pagerank': pagerank, 'elo': elo, 'entropy': entropy, 'appear': appear })
+    res = res[res['appear'] > 0]
     res = res.merge(vn[['id', 'c_votecount', 'c_rating', 'c_average', 'alias']], left_on='vid', right_on='id', how='left')
     associate_title(res)
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
 def main():
-    partial_order()
-    # full_order()
+    # partial_order()
+    full_order()
 
 if __name__ == "__main__":
     main()
