@@ -37,7 +37,23 @@ const columns: MRT_ColumnDef<FullOrder>[] = [
       </div>
     )
   },
-  { accessorKey: 'alias', header: '别名', maxSize: 160 },
+  { accessorKey: 'alias', header: '别名', maxSize: 160, 
+    Cell: ({ cell }) => {
+      const _ = cell.getValue() as string;
+      if (!_) return null;
+      const parts = _.split('\\n');
+      return (
+        <div style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}>
+          {parts.map((item, index) => (
+            <span key={index} className="text-gray-500">
+              {item}
+              {index < parts.length - 1 && <br />}
+            </span>
+          ))}
+        </div>
+      );
+    }
+  },
   // { accessorKey: 'search', header: '搜索', maxSize: 160 },
   { accessorKey: 'c_votecount', header: '评分数', maxSize: 80, muiTableBodyCellProps: { align: 'right' },},
   { accessorKey: 'rank', header: '排名', maxSize: 80, muiTableBodyCellProps: { align: 'right' },
