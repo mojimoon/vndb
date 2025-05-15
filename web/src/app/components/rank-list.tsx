@@ -9,6 +9,12 @@ export default function RankList() {
   const [data, setData] = useState<FullOrder[]>([]);
   const [search, setSearch] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
+  const [hasChanged, setHasChanged] = useState(false);
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(event.target.value);
+    setHasChanged(true);
+  };
   
   const fetchData = async () => {
     setIsLoading(true);
@@ -41,10 +47,11 @@ export default function RankList() {
         <TextField
           label="搜索 (可输入中/英/日文标题/简称/别名)"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={handleInputChange}
           onKeyDown={(e) => e.key === 'Enter' && fetchData()}
-          onBlur={() => fetchData()}
+          onBlur={() => hasChanged && fetchData().then(() => setHasChanged(false))}
           variant="outlined"
+          sx={{ width: '100%', maxWidth: 600, mr: 2 }}
         />
       </Box>
       <MemoTable data={data} isLoading={isLoading} />

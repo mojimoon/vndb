@@ -16,17 +16,37 @@ const columns: MRT_ColumnDef<FullOrder>[] = [
       );
     },
   },
-  { accessorKey: 'title_ja', header: '日文标题', maxSize: 160 },
-  { accessorKey: 'title_en', header: '英文标题', maxSize: 160 },
-  { accessorKey: 'title_zh', header: '中文标题', maxSize: 160 },
+  { accessorKey: 'title_ja', header: '日文标题', maxSize: 160, 
+    Cell: ({ cell }) => (
+      <div style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}>
+        {cell.getValue() as string}
+      </div>
+    )
+  },
+  { accessorKey: 'title_en', header: '英文标题', maxSize: 160, 
+    Cell: ({ cell }) => (
+      <div style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}>
+        {cell.getValue() as string}
+      </div>
+    )
+  },
+  { accessorKey: 'title_zh', header: '中文标题', maxSize: 160, 
+    Cell: ({ cell }) => (
+      <div style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}>
+        {cell.getValue() as string}
+      </div>
+    )
+  },
   { accessorKey: 'alias', header: '别名', maxSize: 160 },
   // { accessorKey: 'search', header: '搜索', maxSize: 160 },
-  // { accessorKey: 'rank', header: '排名', maxSize: 80 },
   { accessorKey: 'c_votecount', header: '评分数', maxSize: 80, muiTableBodyCellProps: { align: 'right' },},
-  { accessorKey: 'c_rating', header: 'VNDB 平均', maxSize: 80, muiTableBodyCellProps: { align: 'right' },
+  { accessorKey: 'rank', header: '排名', maxSize: 80, muiTableBodyCellProps: { align: 'right' },
+    Cell: ({ cell }) => `#${cell.getValue()}`
+  },
+  { accessorKey: 'c_rating', header: '平均', maxSize: 80, muiTableBodyCellProps: { align: 'right' },
     Cell: ({ cell }) => (cell.getValue() as number).toFixed(2),
   },
-  { accessorKey: 'c_average', header: '平均', maxSize: 80, muiTableBodyCellProps: { align: 'right' },
+  { accessorKey: 'c_average', header: '真实平均', maxSize: 80, muiTableBodyCellProps: { align: 'right' },
     Cell: ({ cell }) => (cell.getValue() as number).toFixed(2),
   },
   { accessorKey: 'total', header: '合计', maxSize: 80, muiTableBodyCellProps: { align: 'right' },
