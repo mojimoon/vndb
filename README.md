@@ -34,6 +34,8 @@
 
 ## 使用方法
 
+见 [run.sh](run.sh)。
+
 1. 下载 database dump，解压缩到 `db` 目录下。
 
 ```bash
@@ -43,14 +45,33 @@ tar -I zstd -xf db.tar.zst -C db/
 rm db.tar.zst
 ```
 
-2. 安装依赖。
+注意：在 Windows PowerShell 中，`curl` 是 `Invoke-WebRequest` 的别名，因此需要使用 `curl.exe` 来调用 curl。
+
+```powershell
+curl.exe -L -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
+```
+
+此外，`tar.exe` 无法解压缩 `.tar.zst` 文件，请使用 [7-Zip](https://www.7-zip.org/) 等工具进行解压缩。
+
+2. 安装依赖、运行脚本。
 
 ```bash
 pip install -r requirements.txt
+python main.py
 ```
 
-3. 运行 `main.py`。
+3. 移动文件到 `web/data` 目录下。
 
 ```bash
-python main.py
+mkdir -p web/data
+mv out/dist.csv web/data/
+mv out/full_order.csv web/data/
+```
+
+4. 启动 web 服务器。
+
+```bash
+cd web
+pnpm install
+pnpm run dev
 ```
