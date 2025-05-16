@@ -13,6 +13,8 @@
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^7.1.0",
     "@mui/material": "^7.1.0",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.4",
     "material-react-table": "^3.2.1",
     "next": "15.3.2",
     "react": "^19.0.0",
