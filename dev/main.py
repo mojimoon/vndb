@@ -337,22 +337,45 @@ def partial_order_entropy(data, N):
     scores[:, 1] -= np.bincount(data[:, 1].astype(int), weights=ent, minlength=N)
     return scores[:, 0] / (scores[:, 1] + 1e-10)
 
-def rankit_wrapper(data, ranker='Massey'):
+def rankit_wrapper(data, ranker='massey'):
     from rankit.Table import Table
     from rankit.Ranker import MasseyRanker, ColleyRanker, KeenerRanker, MarkovRanker, ODRanker, DifferenceRanker, EloRanker
-    table = Table(data)
-    if ranker == 'Massey':
+    table = None
+    if ranker == 'massey':
         ranker = MasseyRanker()
-    elif ranker == 'Colley':
+    elif ranker == 'colley':
         ranker = ColleyRanker()
-    elif ranker == 'Keener':
+    elif ranker == 'keener':
         ranker = KeenerRanker()
-    elif ranker == 'Markov':
+    elif ranker == 'markov_rv':
+        hscore = data.iloc[:, 2] / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
+        vscore = data.iloc[:, 3] / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
+        data['hscore'] = hscore
+        data['vscore'] = vscore
+        table = Table(data)
         ranker = MarkovRanker()
-    elif ranker == 'OD':
+    elif ranker == 'markov_rdv':
+        hscore = (data.iloc[:, 2] - data.iloc[:, 3]) / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
+        vscore = -hscore
+        hscore = np.maximum(0, hscore)
+        vscore = np.maximum(0, vscore)
+        data['hscore'] = hscore
+        data['vscore'] = vscore
+        table = Table(data)
+    elif ranker == 'markov_sdv':
+        hscore = data.iloc[:, 2] - data.iloc[:, 3]
+        vscore = -hscore
+        hscore = np.maximum(0, hscore)
+        vscore = np.maximum(0, vscore)
+        data['hscore'] = hscore
+        data['vscore'] = vscore
+        table = Table(data)
+    elif ranker == 'od':
         ranker = ODRanker()
-    elif ranker == 'Difference':
+    elif ranker == 'difference':
         ranker = DifferenceRanker()
+    if table is None:
+        table = Table(data)
     return ranker.rank(table)
 
 def setup_po(lim=None):
