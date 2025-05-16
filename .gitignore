@@ -4,7 +4,9 @@ db/
 *.tar.zst
 
 # intermediate files
-dev/out/*
+dev/tmp/*.csv
+dev/tmp/*.txt
+dev/tmp/*.json
 
 # environment
 dev/.env

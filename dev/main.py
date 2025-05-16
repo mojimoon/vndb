@@ -7,6 +7,7 @@ from supabase import create_client, Client
 pwd = os.path.dirname(os.path.abspath(__file__))
 root = os.path.dirname(pwd)
 dump = os.path.join(root, "db")
+tmp = os.path.join(pwd, "tmp")
 
 load_dotenv()
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
@@ -29,3 +30,6 @@ def connect():
     if SUPABASE_URL is None or SUPABASE_KEY is None:
         raise ValueError("Supabase URL or key is not set in environment variables")
     return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+min_vote = 30
+min_common_vote = 5
