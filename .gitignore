@@ -1,4 +1,10 @@
-vndb-db-*/
+# downloaded database dump
+
 db/
 *.tar.zst
-partial_order.csv
+
+# intermediate files
+dev/out/*
+
+# environment
+dev/.env
