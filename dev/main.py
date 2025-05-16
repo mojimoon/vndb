@@ -123,11 +123,15 @@ def _ulist_vns():
     ulist_vns = ulist_vns[['uid', 'vid', 'lastmod', 'vote', 'notes', 'state']]
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
 
-def partial_order():
+def setup_vn():
     vn = pd.read_csv(os.path.join(tmp, "vn_min.csv"))
     N = vn.shape[0]
-    vid_array = vn['id'].to_numpy()
-    vid2idx = {vid: idx for idx, vid in enumerate(vid_array)}
+    l_vid = vn['id'].to_numpy()
+    vid2idx = {vid: idx for idx, vid in enumerate(l_vid)}
+    return vn, N, l_vid, vid2idx
+
+def partial_order():
+    vn, N, l_vid, vid2idx = setup_vn()
 
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
     u = ulist_vns.copy()
@@ -193,12 +197,131 @@ def partial_order():
         for i in range(N - 1):
             for j in range(i + 1, N):
                 if tv[i, j] >= min_common_vote:
-                    f.write(f"{vid_array[i]},{vid_array[j]},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
+                    f.write(f"{l_vid[i]},{l_vid[j]},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
 
 def upload_ulist_vns(offset=0):
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
     ulist_vns = ulist_vns.iloc[offset:]
     update("ulist_vns", ulist_vns)
+
+def partial_order_classical(data, N):
+    appear = np.zeros(N, dtype=np.int16)
+    appear += np.bincount(data[:, 0].astype(int), minlength=N)
+    appear += np.bincount(data[:, 1].astype(int), minlength=N)
+    _dv = data[:, 2] - data[:, 3] # dv = pv - nv
+    scores = np.zeros((N, 4), dtype=np.float32)
+    for _ in range(data.shape[0]):
+        i, j, pv, nv, tv = data[_]
+        dv = _dv[_]
+        # total score = (X - Y)
+        scores[i, 0] += dv
+        scores[j, 0] -= dv
+        # percentage score = (X - Y) / N
+        scores[i, 1] += dv / tv
+        scores[j, 1] -= dv / tv
+        # simple score = sign(X - Y)
+        scores[i, 2] += np.sign(dv)
+        scores[j, 2] -= np.sign(dv)
+        # weighted simple score = sign(X - Y) * sqrt(N)
+        scores[i, 3] += np.sign(dv) * np.sqrt(tv)
+        scores[j, 3] -= np.sign(dv) * np.sqrt(tv)
+    with np.errstate(invalid='ignore'):
+        for k in range(4):
+            scores[:, k] /= appear
+    return scores
+
+def partial_order_bradley_terry(data, N, max_iter=100, eps=1e-6):
+    skill = np.ones(N)
+    for _ in range(max_iter):
+        last_skill = skill.copy()
+        n, d = np.zeros(N), np.zeros(N)
+        for row in data:
+            i, j, pv, nv, tv = row
+            n[i] += pv
+            d[i] += (pv + nv) / (skill[i] + skill[j])
+            n[j] += nv
+            d[j] += (pv + nv) / (skill[i] + skill[j])
+        skill = n / (d + 1e-10)
+        skill /= skill.sum()
+        if np.all(np.abs(skill - last_skill) < eps):
+            break
+    return skill
+
+def partial_order_random_walk(data, N, alpha=0.85, max_iter=100, eps=1e-6):
+    mat = np.zeros((N, N))
+    for row in data:
+        i, j, pv, nv, tv = row
+        n = pv + nv
+        if n == 0:
+            continue
+        mat[i, j] += pv / n
+        mat[j, i] += nv / n
+
+    row_sums = mat.sum(axis=1, keepdims=True)
+    dead_ends = (row_sums == 0)
+    with np.errstate(invalid='ignore'):
+        mat = mat / row_sums
+    mat[dead_ends.flatten(), :] = 1.0 / N
+    mat[np.isnan(mat)] = 0
+
+    scores = np.ones(N) / N
+    for _ in range(max_iter):
+        last_scores = scores.copy()
+        scores = alpha * mat.T.dot(scores) + (1 - alpha) / N
+        if np.linalg.norm(scores - last_scores, 1) < eps:
+            break
+    # sum(scores) = 1, smaller score = better
+    scores = 1 / scores
+    return scores
+
+def partial_order_elo(data, N, K=32, base=1500, divisor=400):
+    rating = np.full(N, base)
+    for row in data:
+        i, j, pv, nv, tv = row
+        for _ in range(pv):
+            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
+            rating[i] += K * (1 - E0)
+            rating[j] += K * (0 - (1 - E0))
+        for _ in range(nv):
+            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
+            rating[i] += K * (0 - E0)
+            rating[j] += K * (1 - (1 - E0))
+    return rating
+
+def partial_order_elo_v2(data, N, K=32, base=1500, divisor=400, delta_thres=5e-4):
+    rating = np.full(N, base)
+    for row in data:
+        i, j, pv, nv, tv = row
+        E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
+        if pv > 0:
+            delta = K * (1 - E0)
+            if abs(delta) > delta_thres:
+                rating[i] += pv * delta
+                rating[j] += pv * K * (0 - (1 - E0))
+        if nv > 0:
+            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
+            delta = K * (0 - E0)
+            if abs(delta) > delta_thres:
+                rating[i] += nv * delta
+                rating[j] += nv * K * (1 - (1 - E0))
+    return rating
+
+def partial_order_entropy(data, N):
+    scores = np.zeros((N, 2))
+    n = data[:, 2] + data[:, 3]
+    n = np.where(n == 0, 1, n)
+    p, q = data[:, 2] / n, data[:, 3] / n
+    s = p - q
+    ent = -(p * np.log2(p + 1e-10) + q * np.log2(q + 1e-10))
+    for idx, row in enumerate(data):
+        i, j, pv, nv, tv = row
+        if pv + nv == 0:
+            continue
+        scores[i, 0] += s[idx] * ent[idx]
+        scores[j, 0] -= s[idx] * ent[idx]
+        scores[i, 1] += ent[idx]
+        scores[j, 1] += ent[idx]
+    return scores[:, 0] / (scores[:, 1] + 1e-10)
 
 # _vn()
 # _ulist_vns()

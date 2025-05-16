@@ -6,7 +6,9 @@
 
 ## 背景
 
-基于偏序网络的排名算法最初由 [@eyecandy](https://bgm.tv/user/eyecandy) 提出，其核心思想是**基于同一用户对不同作品的评分来判断作品之间的相对优劣**，而不再关注作品本身的评分分布。借此，PONet 可以通过简单高效的算法给出作品的相对排名，无需利用贝叶斯平均等复杂的统计方法。
+基于偏序网络的排名算法最初由 [@eyecandy](https://bgm.tv/user/eyecandy) 提出，其核心思想是**基于同一用户对不同作品的评分来判断作品之间的相对优劣**，而不再关注作品本身的评分分布。
+
+借此，PONet 可以通过简单高效的算法给出作品的相对排名，无需利用贝叶斯平均等复杂的统计方法，作为 [科学排名](https://chii.ai/rank) 的补充。
 
 简而言之，PONet 认为如果在有很多人同时给作品 A 和作品 B 评分的情况下，大多数人 (>50%) 认为 A 比 B 更好，那么我们就可以认为 A 比 B 更好。
 
@@ -32,9 +34,29 @@
 
 此处选择 `min_vote = 30` 是由于 VNDB 只有 >= 30 票的作品才能进入 Top 50。
 
+### 要不要试试科学排名？以及更多
+
+实际上，构建偏序网络过程中记录的数据 `(A, B, x, y, n)` 也可以用于科学排名（详见 [科学排名原博客](https://ikely.me/2016/02/05/%E4%BD%BF%E7%94%A8-rankit-%E6%9E%84%E5%BB%BA%E6%9B%B4%E7%A7%91%E5%AD%A6%E7%9A%84%E6%8E%92%E5%90%8D/) 和 [rankit 项目](https://github.com/wattlebird/ranking)，因此，在这个项目中也进行了科学排名的实现。
+
+此外，同样在构建偏序网络过程中，可以计算出 sample percentile（样本百分位数），其不关心用户 C 具体的评分分布，而是将其转化为一个 0-100% 的百分位数，表示某个具体分数 t 在 C 的所有评分中所处的百分位数。具体来说，
+
+- 假设用户 C 总共给出了 $n$ 个评分 $\{x_1, x_2, \ldots, x_n\} (x_1 < x_2 < \ldots < x_n)$。
+- 将整个标准化的取值范围划分为 $n+1$ 个区间，其中 $x < x_1$ 和 $x > x_n$ 的区间宽度为 $\frac{1}{2n}$，剩余 $n-1$ 个区间（$x \in (x_1, x_2), (x_2, x_3), \ldots, (x_{n-1}, x_n)$）的宽度为 $\frac{1}{n}$。
+- 对于每一个具体的评分 $x_k$，如有多个相同评分，将其视为一个整体，其百分位数取值为该区间的中点。
+
+得出计算公式：
+
+$$\text{sp}(x_k) = \frac{(|\{x_i | x_i < x_k\}| + 0.5 \cdot |\{x_i | x_i = x_k\}|)}{n}$$
+
+其中 $|\{x_i | x_i < x_k\}|$ 表示小于 $x_k$ 的评分数量。这个项目中也尝试了使用 sample percentile 来进行排名。
+
 ## 使用方法
 
-见 [run.sh](run.sh)。
+见 [run.sh](run.sh)。使用前需要先添加执行权限：
+
+```bash
+chmod +x run.sh
+```
 
 1. 下载 database dump，解压缩到 `db` 目录下。
 
@@ -56,6 +78,7 @@ curl.exe -L -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
 2. 安装依赖、运行脚本。
 
 ```bash
+cd dev
 pip install -r requirements.txt
 python main.py
 ```
@@ -63,7 +86,8 @@ python main.py
 3. 启动 web 服务器。
 
 ```bash
-cd web
+cd ..
+cd www
 pnpm install
 pnpm run dev
 ```
