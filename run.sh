@@ -1,9 +1,7 @@
 curl -L -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
-mkdir -p db
+if [ -d "db" ]; then
+    rm -rf db
+fi
+mkdir db
 tar -I zstd -xf db.tar.zst -C db/
 rm db.tar.zst
-
-pip install -r requirements.txt
-python main.py
-
-# mv out/*.csv web/public/out/
