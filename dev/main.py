@@ -208,23 +208,30 @@ def partial_order_classical(data, N):
     appear = np.zeros(N, dtype=np.int16)
     appear += np.bincount(data[:, 0].astype(int), minlength=N)
     appear += np.bincount(data[:, 1].astype(int), minlength=N)
-    _dv = data[:, 2] - data[:, 3] # dv = pv - nv
     scores = np.zeros((N, 4), dtype=np.float32)
-    for _ in range(data.shape[0]):
-        i, j, pv, nv, tv = data[_]
-        dv = _dv[_]
-        # total score = (X - Y)
-        scores[i, 0] += dv
-        scores[j, 0] -= dv
-        # percentage score = (X - Y) / N
-        scores[i, 1] += dv / tv
-        scores[j, 1] -= dv / tv
-        # simple score = sign(X - Y)
-        scores[i, 2] += np.sign(dv)
-        scores[j, 2] -= np.sign(dv)
-        # weighted simple score = sign(X - Y) * sqrt(N)
-        scores[i, 3] += np.sign(dv) * np.sqrt(tv)
-        scores[j, 3] -= np.sign(dv) * np.sqrt(tv)
+    # for _ in range(data.shape[0]):
+    #     i, j, pv, nv, tv = data[_]
+    #     dv = pv - nv
+    #     # total score = (X - Y)
+    #     scores[i, 0] += dv
+    #     scores[j, 0] -= dv
+    #     # percentage score = (X - Y) / N
+    #     scores[i, 1] += dv / tv
+    #     scores[j, 1] -= dv / tv
+    #     # simple score = sign(X - Y)
+    #     scores[i, 2] += np.sign(dv)
+    #     scores[j, 2] -= np.sign(dv)
+    #     # weighted simple score = sign(X - Y) * sqrt(N)
+    #     scores[i, 3] += np.sign(dv) * np.sqrt(tv)
+    #     scores[j, 3] -= np.sign(dv) * np.sqrt(tv)
+    scores[:, 0] = np.bincount(data[:, 0].astype(int), weights=data[:, 2] - data[:, 3], minlength=N)
+    scores[:, 0] -= np.bincount(data[:, 1].astype(int), weights=data[:, 2] - data[:, 3], minlength=N)
+    scores[:, 1] = np.bincount(data[:, 0].astype(int), weights=(data[:, 2] - data[:, 3]) / data[:, 4], minlength=N)
+    scores[:, 1] -= np.bincount(data[:, 1].astype(int), weights=(data[:, 2] - data[:, 3]) / data[:, 4], minlength=N)
+    scores[:, 2] = np.bincount(data[:, 0].astype(int), weights=np.sign(data[:, 2] - data[:, 3]), minlength=N)
+    scores[:, 2] -= np.bincount(data[:, 1].astype(int), weights=np.sign(data[:, 2] - data[:, 3]), minlength=N)
+    scores[:, 3] = np.bincount(data[:, 0].astype(int), weights=np.sign(data[:, 2] - data[:, 3]) * np.sqrt(data[:, 4]), minlength=N)
+    scores[:, 3] -= np.bincount(data[:, 1].astype(int), weights=np.sign(data[:, 2] - data[:, 3]) * np.sqrt(data[:, 4]), minlength=N)
     with np.errstate(invalid='ignore'):
         for k in range(4):
             scores[:, k] /= appear
@@ -288,7 +295,7 @@ def partial_order_elo(data, N, K=32, base=1500, divisor=400):
             rating[j] += K * (1 - (1 - E0))
     return rating
 
-def partial_order_elo_v2(data, N, K=32, base=1500, divisor=400, delta_thres=5e-4):
+def partial_order_elo_v2(data, N, K=32, base=1500, divisor=400, delta_thres=1e-3):
     rating = np.full(N, base)
     for row in data:
         i, j, pv, nv, tv = row
@@ -313,17 +320,52 @@ def partial_order_entropy(data, N):
     p, q = data[:, 2] / n, data[:, 3] / n
     s = p - q
     ent = -(p * np.log2(p + 1e-10) + q * np.log2(q + 1e-10))
-    for idx, row in enumerate(data):
-        i, j, pv, nv, tv = row
-        if pv + nv == 0:
-            continue
-        scores[i, 0] += s[idx] * ent[idx]
-        scores[j, 0] -= s[idx] * ent[idx]
-        scores[i, 1] += ent[idx]
-        scores[j, 1] += ent[idx]
+    # for idx, row in enumerate(data):
+    #     i, j, pv, nv, tv = row
+    #     if pv + nv == 0:
+    #         continue
+    #     scores[i, 0] += s[idx] * ent[idx]
+    #     scores[j, 0] -= s[idx] * ent[idx]
+    #     scores[i, 1] += ent[idx]
+    #     scores[j, 1] += ent[idx]
+    scores[:, 0] = np.bincount(data[:, 0].astype(int), weights=s * ent, minlength=N)
+    scores[:, 0] -= np.bincount(data[:, 1].astype(int), weights=s * ent, minlength=N)
+    scores[:, 1] = np.bincount(data[:, 0].astype(int), weights=ent, minlength=N)
+    scores[:, 1] -= np.bincount(data[:, 1].astype(int), weights=ent, minlength=N)
     return scores[:, 0] / (scores[:, 1] + 1e-10)
+
+def setup_po(lim=None):
+    vn, N, l_vid, vid2idx = setup_vn()
+
+    po = pd.read_csv(os.path.join(tmp, "partial_order.csv"))
+    # np.vectorize: 5.5s
+    # np.array(list(map)): 4.4s
+    # pandas.map + to_numpy: 2.5s
+    po.iloc[:, 0] = po.iloc[:, 0].map(vid2idx)
+    po.iloc[:, 1] = po.iloc[:, 1].map(vid2idx)
+    po = po.to_numpy()
+
+    if lim is not None:
+        # performance test load(2000)
+        # np + classical (naive): 32s
+        # np + classical (bincount): 3s
+        # df + classical_df (naive): 66s
+        # np + random_walk: 4s
+        # df + random_walk_df: 4s
+        # np + elo_v2: 19s
+        # df + elo_v2_df: 13s
+        # np + entropy (naive): 5s
+        # np + entropy (bincount): 2.5s
+        # df + entropy_df (naive): 45s
+        po = po[(po[:, 0] < lim) & (po[:, 1] < lim)]
+        # po = po[(po.iloc[:, 0] < lim) & (po.iloc[:, 1] < lim)]
+        N = lim
+        entropy = partial_order_entropy(po, N)
+    else:
+        return vn, N, l_vid, vid2idx, po
 
 # _vn()
 # _ulist_vns()
 # partial_order()
 # upload_ulist_vns()
+setup_po(2000)
