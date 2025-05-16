@@ -425,10 +425,53 @@ def postfix():
     res['rank'] = np.arange(1, len(res) + 1)
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.3f')
 
+def _ulist_vns():
+    ulist_vns = read("ulist_vns") # uid	vid	added	lastmod	vote_date	started	finished	vote	notes	labels
+    print(f"ulist_vns.shape: {ulist_vns.shape}")
+    vid = vid_load()
+    ulist_vns = ulist_vns[(ulist_vns['vid'].isin(vid))]
+    # labels is a int array, e.g. {2,7}
+    dist = pd.read_csv(os.path.join(out_dir, "dist.csv"))
+    dist['vid'] = vid
+    # for each work; for labels in 1,2,3,4,5; count the appearance of each label (Playing, Finished, Stalled, Dropped, Wishlist)
+    def parse_labels(label_str):
+        try:
+            return [int(x) for x in label_str.strip('{}').split(',') if x.strip().isdigit()]
+        except:
+            return []
+    ulist_vns['label_set'] = ulist_vns['labels'].apply(parse_labels)
+    for l in range(1, 6):
+        ulist_vns[f'l{l}'] = ulist_vns['label_set'].apply(lambda s: l in s)
+    def extract_min(label_set):
+        _ = label_set[0]
+        return _ if _ <= 5 else 0
+    ulist_vns['state'] = ulist_vns['label_set'].apply(extract_min)
+    # aggregate l1, l2, l3, l4, l5 and total collection sum and save to dist
+    ulist_vid = ulist_vns.groupby('vid')
+    dist['collection'] = ulist_vid['vid'].transform('count')
+    dist[['l1', 'l2', 'l3', 'l4', 'l5']] = ulist_vid[['l1', 'l2', 'l3', 'l4', 'l5']].transform('sum')
+    dist[['collection', 'l1', 'l2', 'l3', 'l4', 'l5']] = dist[['collection', 'l1', 'l2', 'l3', 'l4', 'l5']].fillna(0).astype(np.int16)
+
+    ulist_vns = ulist_vns[ulist_vns['vote'] != '\\N']
+    ulist_vns = ulist_vns[['uid', 'vid', 'vote_date', 'vote', 'notes', 'state']]
+    ulist_cpy = ulist_vns.copy()
+    ulist_cpy = ulist_cpy[(~ulist_cpy['notes'].isna())]
+    print(f"ulist_cpy.shape: {ulist_cpy.shape}")
+    uid_list = ulist_cpy['uid'].unique()
+    ulist_vns = ulist_vns[ulist_vns['uid'].isin(uid_list)]
+    print(f"ulist_vns.shape: {ulist_vns.shape}")
+
+    dist.to_csv(os.path.join(out_dir, "dist.csv"), index=False, float_format='%.3f')
+    ulist_vns.to_csv(os.path.join(out_dir, "ulist_vns.csv"), index=False)
+
+def minimize_dataset():
+    _ulist_vns()
+
 def main():
     # partial_order()
     # full_order()
-    postfix()
+    # postfix()
+    minimize_dataset()
 
 if __name__ == "__main__":
     main()
