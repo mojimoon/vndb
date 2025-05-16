@@ -52,6 +52,10 @@ $$\text{sp}(x_k) = \frac{(|\{x_i | x_i < x_k\}| + 0.5 \cdot |\{x_i | x_i = x_k\}
 
 ## 使用方法
 
+本项目的代码分为两个部分，数据使用 [Supabase](https://supabase.com/) 存储。
+
+### 数据处理
+
 见 [run.sh](run.sh)。使用前需要先添加执行权限：
 
 ```bash
@@ -75,7 +79,9 @@ curl.exe -L -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
 
 此外，`tar.exe` 无法解压缩 `.tar.zst` 文件，请使用 [7-Zip](https://www.7-zip.org/) 等工具进行解压缩。
 
-2. 安装依赖、运行脚本。
+2. 复制 `dev/.env.example` 为 `dev/.env`，并填入 Supabase 环境变量。可以在官网 [这一页](https://supabase.com/docs/guides/getting-started/quickstarts/nextjs) 一键获取。
+
+3. 安装依赖、运行脚本。
 
 ```bash
 cd dev
@@ -83,10 +89,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
-3. 启动 web 服务器。
+### 前端展示
+
+框架：React TypeScript + Next.js 全栈框架。推荐使用 [pnpm](https://pnpm.io/) 进行包管理。
+
+同样地，复制 `www/.env.example` 为 `www/.env.local`，并填入 Supabase 环境变量。
 
 ```bash
-cd ..
 cd www
 pnpm install
 pnpm run dev

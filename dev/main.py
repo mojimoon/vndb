@@ -10,8 +10,8 @@ dump = os.path.join(root, "db")
 tmp = os.path.join(pwd, "tmp")
 
 load_dotenv()
-SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-SUPABASE_KEY = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 
 if not os.path.exists(dump):
     raise FileNotFoundError(f"Database directory {dump} does not exist")
