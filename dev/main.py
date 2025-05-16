@@ -205,52 +205,40 @@ def ari_geo():
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
     ulist_vns.iloc[:, 1] = ulist_vns.iloc[:, 1].map(vid2idx)
     ulist_vns = ulist_vns[['uid', 'vid', 'vote', 'norm']].to_numpy()
+    ulist_vns[:, 3] = np.maximum(ulist_vns[:, 3], 1)
     M = ulist_vns.shape[0]
 
     ari_geo = np.zeros((N, N, 8), dtype=np.float32)
 
-    _begin, _end, _cur = 0, 1, ulist_vns[0, 0]
-    while _end < M:
-        if ulist_vns[_end, 0] == _cur:
-            _end += 1
-        else:
-            for i in range(_begin, _end - 1):
-                v1 = ulist_vns[i, 1]
-                for j in range(i + 1, _end):
-                    v2 = ulist_vns[j, 1]
-                    ari_geo[v1, v2, 0] += ulist_vns[i, 2] # ariX
-                    ari_geo[v1, v2, 1] += ulist_vns[j, 2] # ariY
-                    ari_geo[v1, v2, 2] += np.log10(ulist_vns[i, 2]) # geoX
-                    ari_geo[v1, v2, 3] += np.log10(ulist_vns[j, 2]) # geoY
-                    ari_geo[v1, v2, 4] += ulist_vns[i, 3] # ps_ariX
-                    ari_geo[v1, v2, 5] += ulist_vns[j, 3] # ps_ariY
-                    ari_geo[v1, v2, 6] += np.log10(ulist_vns[i, 3]) # ps_geoX
-                    ari_geo[v1, v2, 7] += np.log10(ulist_vns[j, 3]) # ps_geoY
-            _begin = _end
-            _end = _begin + 1
-            _cur = ulist_vns[_begin, 0]
-    if _begin < M:
-        for i in range(_begin, M - 1):
-            v1 = ulist_vns[i, 1]
-            for j in range(i + 1, M):
-                v2 = ulist_vns[j, 1]
-                ari_geo[v1, v2, 0] += ulist_vns[i, 2]
-                ari_geo[v1, v2, 1] += ulist_vns[j, 2]
-                ari_geo[v1, v2, 2] += np.log10(ulist_vns[i, 2])
-                ari_geo[v1, v2, 3] += np.log10(ulist_vns[j, 2])
-                ari_geo[v1, v2, 4] += ulist_vns[i, 3]
-                ari_geo[v1, v2, 5] += ulist_vns[j, 3]
-                ari_geo[v1, v2, 6] += np.log10(ulist_vns[i, 3])
-                ari_geo[v1, v2, 7] += np.log10(ulist_vns[j, 3])
-    
+    uids, idx_start = np.unique(ulist_vns[:, 0], return_index=True)
+    idx_end = np.r_[idx_start[1:], M]
+
+    for s, e in zip(idx_start, idx_end):
+        arr = ulist_vns[s:e]
+        vids = arr[:, 1].astype(int)
+        votes = arr[:, 2]
+        norms = arr[:, 3]
+        n = len(arr)
+        if n < 2:
+            continue
+        idx_i, idx_j = np.triu_indices(n, k=1)
+        v1, v2 = vids[idx_i], vids[idx_j]
+        ari_geo[v1, v2, 0] += votes[idx_i]
+        ari_geo[v1, v2, 1] += votes[idx_j]
+        ari_geo[v1, v2, 2] += np.log10(votes[idx_i])
+        ari_geo[v1, v2, 3] += np.log10(votes[idx_j])
+        ari_geo[v1, v2, 4] += norms[idx_i]
+        ari_geo[v1, v2, 5] += norms[idx_j]
+        ari_geo[v1, v2, 6] += np.log10(norms[idx_i])
+        ari_geo[v1, v2, 7] += np.log10(norms[idx_j])
+
     partial_order = pd.read_csv(os.path.join(tmp, "partial_order.csv"))
-    # ari_geo_1d = np.zeros((partial_order.shape[0], 8), dtype=np.float32)
-    ari_geo_1d = pd.DataFrame(columns=['ariX', 'ariY', 'geoX', 'geoY', 'ps_ariX', 'ps_ariY', 'ps_geoX', 'ps_geoY'])
-    for i in range(partial_order.shape[0]):
-        x0, x1 = partial_order.iloc[i, 0], partial_order.iloc[i, 1]
-        idx0, idx1 = int(vid2idx[x0]), int(vid2idx[x1])
-        # copy the whole row
-        ari_geo_1d.loc[i] = ari_geo[idx0, idx1]
+
+    idx0 = partial_order.iloc[:, 0].map(vid2idx).to_numpy().astype(int)
+    idx1 = partial_order.iloc[:, 1].map(vid2idx).to_numpy().astype(int)
+    ari_geo_1d = ari_geo[idx0, idx1]  # (n, 8)
+    ari_geo_1d = pd.DataFrame(ari_geo_1d, columns=['ariX', 'ariY', 'geoX', 'geoY', 'ps_ariX', 'ps_ariY', 'ps_geoX', 'ps_geoY'])
+
     tv = partial_order['tv'].to_numpy()
     ari_geo_1d.iloc[:, 0] /= tv
     ari_geo_1d.iloc[:, 1] /= tv
@@ -260,6 +248,7 @@ def ari_geo():
     ari_geo_1d.iloc[:, 5] /= tv
     ari_geo_1d.iloc[:, 6] = np.log10(ari_geo_1d.iloc[:, 6] / tv - 2)
     ari_geo_1d.iloc[:, 7] = np.log10(ari_geo_1d.iloc[:, 7] / tv - 2)
+
     ari_geo_1d.to_csv(os.path.join(tmp, "ari_geo.csv"), index=False)
 
 def upload_ulist_vns(offset=0):
@@ -479,7 +468,7 @@ def setup_po(lim=None):
 
 # _vn()
 # _ulist_vns()
-# partial_order()
+partial_order()
 # upload_ulist_vns()
-ari_geo()
+# ari_geo()
 # setup_po()
