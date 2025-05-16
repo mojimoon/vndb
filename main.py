@@ -5,6 +5,7 @@ import pandas as pd
 from multiprocessing import Pool, cpu_count
 from scipy.sparse import dok_matrix
 import re
+import json
 # from tqdm import tqdm
 
 db_dir = 'db/db'
@@ -15,6 +16,24 @@ if not os.path.exists(db_dir):
     raise FileNotFoundError(f"Database directory '{db_dir}' does not exist. Please run the setup script.")
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
+
+from unittest.mock import patch
+@patch('json.encoder.c_make_encoder', None)
+def json_dumps_with_two_digit_float(some_object):
+    # saving original method
+    of = json.encoder._make_iterencode
+    def inner(*args, **kwargs):
+        args = list(args)
+        # fifth argument is float formater which will we replace
+        args[4] = lambda o: '{:.2f}'.format(o)
+        return of(*args, **kwargs)
+    
+    with patch('json.encoder._make_iterencode', wraps=inner):
+        return json.dumps(some_object)
+
+def json_dump(data, filename):
+    with open(filename, 'w') as f:
+        json.dump(data, f, separators=(',', ':'), indent=None)
 
 def read(table_name):
     table_path = os.path.join(db_dir, table_name)
@@ -469,8 +488,52 @@ def _ulist_vns():
     dist.to_csv(os.path.join(out_dir, "dist.csv"), index=False, float_format='%.3f')
     ulist_vns.to_csv(os.path.join(out_dir, "ulist_vns.csv"), index=False)
 
+def _stat():
+    import subprocess
+    def count_lines(filename):
+        result = subprocess.run(['wc', '-l', filename], stdout=subprocess.PIPE, text=True)
+        return int(result.stdout.split()[0])
+    cnts = {}
+    for table in ['chars', 'chars_traits', 'image_votes', 'images', 'producers', 'releases', 'staff', 'tags', 'tags_vn', 'traits', 'ulist_vns', 'users', 'vn']:
+        cnts[table] = count_lines(os.path.join(db_dir, table)) - 1
+    ulist_vns = read("ulist_vns")
+    total_collection = ulist_vns.shape[0]
+    def parse_labels(label_str):
+        try:
+            return [int(x) for x in label_str.strip('{}').split(',') if x.strip().isdigit()]
+        except:
+            return []
+    ulist_vns['label_set'] = ulist_vns['labels'].apply(parse_labels)
+    for l in range(1, 6):
+        ulist_vns[f'l{l}'] = ulist_vns['label_set'].apply(lambda s: l in s)
+    lsum = ulist_vns[['l1', 'l2', 'l3', 'l4', 'l5']].sum()
+    vote_np = ulist_vns['vote'].to_numpy()
+    vote_np = vote_np[vote_np != '\\N']
+    vote_np = (vote_np.astype(np.float16) / 10).astype(np.int16)
+    vsum = np.zeros(11, dtype=int)
+    for a in range(1, 11):
+        vsum[a] = np.sum(vote_np == a)
+    _mean, _std = np.mean(vote_np), np.std(vote_np)
+    ulist_vns = ulist_vns[ulist_vns['vote'] != '\\N']
+    ulist_vns['vote_date'] = pd.to_datetime(ulist_vns['vote_date'], format='%Y-%m-%d')
+    ulist_vns['year'] = ulist_vns['vote_date'].dt.year
+    ulist_vns['vote'] = vote_np
+    ulist_vns = ulist_vns.groupby('year').agg({'vote': ['count', 'mean', 'std']})
+    year_data = ulist_vns['vote'].reset_index()
+    year_data.columns = ['year', 'count', 'mean', 'std']
+    json_dump({
+        'count': cnts,
+        'collection': total_collection,
+        'vote_mean': _mean,
+        'vote_std': _std,
+        'votes': vsum.tolist(),
+        'labels': lsum.tolist(),
+        'year_data': year_data.to_dict(orient='records'),
+    }, os.path.join(out_dir, "stat.json"))
+
 def minimize_dataset():
-    _ulist_vns()
+    # _ulist_vns()
+    _stat()
 
 def main():
     # partial_order()
