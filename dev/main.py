@@ -2,7 +2,6 @@ import os
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
 pwd = os.path.dirname(os.path.abspath(__file__))
 root = os.path.dirname(pwd)
@@ -27,6 +26,7 @@ def load(table):
     return df
 
 def connect():
+    from supabase import create_client, Client
     if SUPABASE_URL is None or SUPABASE_KEY is None:
         raise ValueError("Supabase URL or key is not set in environment variables")
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -316,7 +316,10 @@ def partial_order_elo_v2(data, N, K=32, base=1500, divisor=400, delta_thres=1e-3
 def partial_order_entropy(data, N):
     scores = np.zeros((N, 2))
     n = data[:, 2] + data[:, 3]
-    n = np.where(n == 0, 1, n)
+    # n = np.where(n == 0, 1, n)
+    zero_idx = n == 0
+    data = data[~zero_idx]
+    n = n[~zero_idx]
     p, q = data[:, 2] / n, data[:, 3] / n
     s = p - q
     ent = -(p * np.log2(p + 1e-10) + q * np.log2(q + 1e-10))
@@ -334,6 +337,24 @@ def partial_order_entropy(data, N):
     scores[:, 1] -= np.bincount(data[:, 1].astype(int), weights=ent, minlength=N)
     return scores[:, 0] / (scores[:, 1] + 1e-10)
 
+def rankit_wrapper(data, ranker='Massey'):
+    from rankit.Table import Table
+    from rankit.Ranker import MasseyRanker, ColleyRanker, KeenerRanker, MarkovRanker, ODRanker, DifferenceRanker, EloRanker
+    table = Table(data)
+    if ranker == 'Massey':
+        ranker = MasseyRanker()
+    elif ranker == 'Colley':
+        ranker = ColleyRanker()
+    elif ranker == 'Keener':
+        ranker = KeenerRanker()
+    elif ranker == 'Markov':
+        ranker = MarkovRanker()
+    elif ranker == 'OD':
+        ranker = ODRanker()
+    elif ranker == 'Difference':
+        ranker = DifferenceRanker()
+    return ranker.rank(table)
+
 def setup_po(lim=None):
     vn, N, l_vid, vid2idx = setup_vn()
 
@@ -343,24 +364,30 @@ def setup_po(lim=None):
     # pandas.map + to_numpy: 2.5s
     po.iloc[:, 0] = po.iloc[:, 0].map(vid2idx)
     po.iloc[:, 1] = po.iloc[:, 1].map(vid2idx)
-    po = po.to_numpy()
+    # po = po.to_numpy()
 
     if lim is not None:
-        # performance test load(2000)
-        # np + classical (naive): 32s
-        # np + classical (bincount): 3s
-        # df + classical_df (naive): 66s
-        # np + random_walk: 4s
-        # df + random_walk_df: 4s
-        # np + elo_v2: 19s
-        # df + elo_v2_df: 13s
-        # np + entropy (naive): 5s
-        # np + entropy (bincount): 2.5s
-        # df + entropy_df (naive): 45s
-        po = po[(po[:, 0] < lim) & (po[:, 1] < lim)]
-        # po = po[(po.iloc[:, 0] < lim) & (po.iloc[:, 1] < lim)]
+        '''
+        performance test load(2000)
+        np + classical (naive): 32s
+        np + classical (bincount): 3s
+        df + classical_df (naive): 66s
+        np + random_walk: 4s
+        df + random_walk_df: 4s
+        np + elo_v2: 19s
+        df + elo_v2_df: 13s
+        np + entropy (naive): 5s
+        np + entropy (bincount): 2.5s
+        df + entropy_df (naive): 45s
+        rankit.Massey: 8s (sys 35s)
+        rankit.Colley: 15s (sys 68s)
+        rankit.Keener, rankit.Markov, rankit.OD, rankit.Difference: 4s
+        '''
+        # po = po[(po[:, 0] < lim) & (po[:, 1] < lim)]
+        po = po[(po.iloc[:, 0] < lim) & (po.iloc[:, 1] < lim)]
+        po = po.rename(columns={po.columns[0]: 'host', po.columns[1]: 'visit', po.columns[2]: 'hscore', po.columns[3]: 'vscore'})
+        po = po[['host', 'visit', 'hscore', 'vscore']]
         N = lim
-        entropy = partial_order_entropy(po, N)
     else:
         return vn, N, l_vid, vid2idx, po
 
