@@ -130,70 +130,116 @@ def setup_vn():
     vid2idx = {vid: idx for idx, vid in enumerate(l_vid)}
     return vn, N, l_vid, vid2idx
 
+'''
+performance
+naive O(M^2) loop: 10min
+triu_indices vectorization: 1.5min
+'''
 def partial_order():
+    from scipy.stats import rankdata
     vn, N, l_vid, vid2idx = setup_vn()
+
+    # ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
+    # u = ulist_vns.copy()
+    # u = u[['uid', 'vid', 'vote']]
+    # u['vid_idx'] = u['vid'].map(vid2idx)
+    # u = u[['uid', 'vid_idx', 'vote']].to_numpy()
+    # M = u.shape[0]
+    # u = np.c_[u, np.zeros(M, dtype=float)]
+
+    # pv = np.zeros((N, N), dtype=np.int16)
+    # nv = np.zeros((N, N), dtype=np.int16)
+    # tv = np.zeros((N, N), dtype=np.int16)
+
+    # _begin, _end, _cur = 0, 1, u[0, 0]
+    # while _end < M:
+    #     if u[_end, 0] == _cur:
+    #         _end += 1
+    #     else:
+    #         for i in range(_begin, _end - 1):
+    #             v1, r1 = int(u[i, 1]), u[i, 2]
+    #             for j in range(i + 1, _end):
+    #                 v2, r2 = int(u[j, 1]), u[j, 2]
+    #                 if r1 > r2:
+    #                     pv[v1, v2] += 1
+    #                     u[i, 3] += 1
+    #                 elif r1 < r2:
+    #                     nv[v1, v2] += 1
+    #                     u[j, 3] += 1
+    #                 else:
+    #                     u[i, 3] += 0.5
+    #                     u[j, 3] += 0.5
+    #                 tv[v1, v2] += 1
+    #         tot = _end - _begin
+    #         u[_begin:_end, 3] = (u[_begin:_end, 3] + 0.5) / tot
+    #         _begin = _end
+    #         _end = _begin + 1
+    #         _cur = u[_begin, 0]
+    #         # print(_begin)
+    # # the last group
+    # if _begin < M:
+    #     for i in range(_begin, M - 1):
+    #         v1, r1 = int(u[i, 1]), u[i, 2]
+    #         for j in range(i + 1, M):
+    #             v2, r2 = int(u[j, 1]), u[j, 2]
+    #             if r1 > r2:
+    #                 pv[v1, v2] += 1
+    #                 u[i, 3] += 1
+    #             elif r1 < r2:
+    #                 nv[v1, v2] += 1
+    #                 u[j, 3] += 1
+    #             else:
+    #                 u[i, 3] += 0.5
+    #                 u[j, 3] += 0.5
+    #             tv[v1, v2] += 1
+    #     tot = M - _begin
+    #     u[_begin:M, 3] = (u[_begin:M, 3] + 0.5) / tot
 
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
     u = ulist_vns.copy()
     u = u[['uid', 'vid', 'vote']]
-    u['vid_idx'] = u['vid'].map(vid2idx)
-    u = u[['uid', 'vid_idx', 'vote']].to_numpy()
+    u.iloc[:, 1] = u.iloc[:, 1].map(vid2idx)
+    u = u[['uid', 'vid', 'vote']].to_numpy()
     M = u.shape[0]
     u = np.c_[u, np.zeros(M, dtype=float)]
 
-    pv = np.zeros((N, N), dtype=np.int16)
-    nv = np.zeros((N, N), dtype=np.int16)
-    tv = np.zeros((N, N), dtype=np.int16)
+    pv, nv, tv = np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16)
+    uids, idx_start = np.unique(u[:, 0], return_index=True)
+    idx_end = np.r_[idx_start[1:], M]
 
-    _begin, _end, _cur = 0, 1, u[0, 0]
-    while _end < M:
-        if u[_end, 0] == _cur:
-            _end += 1
-        else:
-            for i in range(_begin, _end - 1):
-                v1, r1 = int(u[i, 1]), u[i, 2]
-                for j in range(i + 1, _end):
-                    v2, r2 = int(u[j, 1]), u[j, 2]
-                    if r1 > r2:
-                        pv[v1, v2] += 1
-                        u[i, 3] += 1
-                    elif r1 < r2:
-                        nv[v1, v2] += 1
-                        u[j, 3] += 1
-                    else:
-                        u[i, 3] += 0.5
-                        u[j, 3] += 0.5
-                    tv[v1, v2] += 1
-            tot = _end - _begin
-            u[_begin:_end, 3] = (u[_begin:_end, 3] + 0.5) / tot
-            _begin = _end
-            _end = _begin + 1
-            _cur = u[_begin, 0]
-            # print(_begin)
-    # the last group
-    if _begin < M:
-        for i in range(_begin, M - 1):
-            v1, r1 = int(u[i, 1]), u[i, 2]
-            for j in range(i + 1, M):
-                v2, r2 = int(u[j, 1]), u[j, 2]
-                if r1 > r2:
-                    pv[v1, v2] += 1
-                    u[i, 3] += 1
-                elif r1 < r2:
-                    nv[v1, v2] += 1
-                    u[j, 3] += 1
-                else:
-                    u[i, 3] += 0.5
-                    u[j, 3] += 0.5
-                tv[v1, v2] += 1
-        tot = M - _begin
-        u[_begin:M, 3] = (u[_begin:M, 3] + 0.5) / tot
+    for s, e in zip(idx_start, idx_end):
+        arr = u[s:e]
+        n = e - s
+        if n < 2:
+            u[s:e, 3] = 0.5
+            continue
+        indices = arr[:, 1].astype(int)
+        votes = arr[:, 2]
+        idx_i, idx_j = np.triu_indices(n, k=1)
+        v1, v2 = indices[idx_i], indices[idx_j]
+        r1, r2 = votes[idx_i], votes[idx_j]
+        
+        gt_mask = r1 > r2
+        lt_mask = r1 < r2
+        eq_mask = ~(gt_mask | lt_mask)
 
-    ulist_vns['norm'] = np.round(u[:, 3] * 1000).astype(int)
+        pv[v1[gt_mask], v2[gt_mask]] += 1
+        nv[v1[lt_mask], v2[lt_mask]] += 1
+        tv[v1, v2] += 1
+
+        win_count = np.zeros(n, dtype=float)
+        np.add.at(win_count, idx_i[gt_mask], 1)
+        np.add.at(win_count, idx_j[lt_mask], 1)
+        np.add.at(win_count, idx_i[eq_mask], 0.5)
+        np.add.at(win_count, idx_j[eq_mask], 0.5)
+
+        u[s:e, 3] = rankdata(win_count, method='average') / n
+
+    ulist_vns['sp'] = np.round(u[:, 3] * 10000).astype(int)
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
 
     with open(os.path.join(tmp, "partial_order.csv"), "w") as f:
-        f.write("x0,x1,pv,nv,tv\n")
+        f.write("i,j,pv,nv,tv\n")
         for i in range(N - 1):
             for j in range(i + 1, N):
                 if tv[i, j] >= min_common_vote:
@@ -215,14 +261,14 @@ def ari_geo():
 
     for s, e in zip(idx_start, idx_end):
         arr = ulist_vns[s:e]
-        vids = arr[:, 1].astype(int)
-        votes = arr[:, 2]
-        norms = arr[:, 3]
-        n = len(arr)
+        n = e - s
         if n < 2:
             continue
+        indices = arr[:, 1].astype(int)
+        votes = arr[:, 2]
+        norms = arr[:, 3]
         idx_i, idx_j = np.triu_indices(n, k=1)
-        v1, v2 = vids[idx_i], vids[idx_j]
+        v1, v2 = indices[idx_i], indices[idx_j]
         ari_geo[v1, v2, 0] += votes[idx_i]
         ari_geo[v1, v2, 1] += votes[idx_j]
         ari_geo[v1, v2, 2] += np.log10(votes[idx_i])
@@ -237,7 +283,7 @@ def ari_geo():
     idx0 = partial_order.iloc[:, 0].map(vid2idx).to_numpy().astype(int)
     idx1 = partial_order.iloc[:, 1].map(vid2idx).to_numpy().astype(int)
     ari_geo_1d = ari_geo[idx0, idx1]  # (n, 8)
-    ari_geo_1d = pd.DataFrame(ari_geo_1d, columns=['ariX', 'ariY', 'geoX', 'geoY', 'ps_ariX', 'ps_ariY', 'ps_geoX', 'ps_geoY'])
+    ari_geo_1d = pd.DataFrame(ari_geo_1d, columns=['ariX', 'ariY', 'geoX', 'geoY', 'sp_ariX', 'sp_ariY', 'sp_geoX', 'sp_geoY'])
 
     tv = partial_order['tv'].to_numpy()
     ari_geo_1d.iloc[:, 0] /= tv
@@ -251,10 +297,11 @@ def ari_geo():
 
     ari_geo_1d.to_csv(os.path.join(tmp, "ari_geo.csv"), index=False)
 
-def upload_ulist_vns(offset=0):
+def upload_ulist(offset=0):
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
-    ulist_vns = ulist_vns.iloc[offset:]
-    update("ulist_vns", ulist_vns)
+    if offset > 0:
+        ulist_vns = ulist_vns.iloc[offset:]
+    update("ulist", ulist_vns)
 
 def partial_order_classical(data, N):
     appear = np.zeros(N, dtype=np.int16)
@@ -468,7 +515,7 @@ def setup_po(lim=None):
 
 # _vn()
 # _ulist_vns()
-partial_order()
-# upload_ulist_vns()
+# partial_order()
+upload_ulist()
 # ari_geo()
 # setup_po()
