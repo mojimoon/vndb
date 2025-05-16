@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from multiprocessing import Pool, cpu_count
 from scipy.sparse import dok_matrix
+import re
+import json
 # from tqdm import tqdm
 
 db_dir = 'db/db'
@@ -14,6 +16,24 @@ if not os.path.exists(db_dir):
     raise FileNotFoundError(f"Database directory '{db_dir}' does not exist. Please run the setup script.")
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
+
+from unittest.mock import patch
+@patch('json.encoder.c_make_encoder', None)
+def json_dumps_with_two_digit_float(some_object):
+    # saving original method
+    of = json.encoder._make_iterencode
+    def inner(*args, **kwargs):
+        args = list(args)
+        # fifth argument is float formater which will we replace
+        args[4] = lambda o: '{:.2f}'.format(o)
+        return of(*args, **kwargs)
+    
+    with patch('json.encoder._make_iterencode', wraps=inner):
+        return json.dumps(some_object)
+
+def json_dump(data, filename):
+    with open(filename, 'w') as f:
+        json.dump(data, f, separators=(',', ':'), indent=None)
 
 def read(table_name):
     table_path = os.path.join(db_dir, table_name)
@@ -349,6 +369,12 @@ def full_order():
 
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
+def purify(s):
+    # only keep Alphanumeric, Chinese and Japanese characters
+    s = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff\u3040-\u30ff]', '', s)
+    s = s.lower()
+    return s
+
 def postfix():
     vid = vid_load()
     vn = read("vn")
@@ -359,8 +385,24 @@ def postfix():
     assert vn.shape[0] == res.shape[0]
     vn.reset_index(drop=True, inplace=True)
 
+    releases_vn = read("releases_vn") # id	vid	rtype
+    releases_producers = read("releases_producers") # id	pid	developer	publisher
+    producers = read("producers") # id	type	lang	name	latin	alias	description
+
+    # 1 match res.vid with releases_vn.vid (first match)
+    releases_vn_first = releases_vn.drop_duplicates(subset=['vid'], keep='first')
+    res = res.merge(releases_vn_first[['vid', 'id']], on='vid', how='left')
+    # 2 match releases_vn.id with releases_producers.id where releases_producers.developer is true (first match)
+    releases_producers_dev = releases_producers[releases_producers['developer'] == 1]
+    releases_producers_dev_first = releases_producers_dev.drop_duplicates(subset=['id'], keep='first')
+    res = res.merge(releases_producers_dev_first[['id', 'pid']], on='id', how='left')
+    # 3 match releases_producers.pid with producers.id (should be unique)
+    producers = producers.rename(columns={'id': 'pid', 'name': 'p_name', 'latin': 'p_latin', 'alias': 'p_alias'})
+    res = res.merge(producers[['pid', 'p_name', 'p_latin', 'p_alias']], on='pid', how='left')
+    res.drop(columns=['id'], inplace=True)
+
     res = res.merge(vn[['id', 'alias', 'c_votecount', 'c_rating', 'c_average']], left_on='vid', right_on='id', how='left')
-    vn_titles = read("vn_titles")
+    vn_titles = read("vn_titles") # id	lang	official	title	latin
     olang = vn['olang']
     _ja, _zh, _en = vn_titles[vn_titles['lang'] == 'ja'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'en']
     res['title_ja'] = res['vid'].map(_ja.set_index('id')['title'])
@@ -383,26 +425,121 @@ def postfix():
             if len(olang_title) > 0:
                 res.loc[i, 'title_en'] = olang_title.iloc[0]['latin']
                 res.loc[i, 'title_ja'] = olang_title.iloc[0]['title']
+
+        # if pd.isna(res['title_en'][i]):
+        #     olang_title = vn_titles[(vn_titles['id'] == res['vid'][i]) & (vn_titles['lang'] == olang[i])]
+        #     if len(olang_title) > 0:
+        #         res.loc[i, 'title_en'] = olang_title.iloc[0]['latin']
         
         if zh_q and not pd.isna(res['title_en'][i]):
             res.loc[i, 'title_zh'] = res['title_en'][i]
     
-    res['title_ja'] = res['title_ja'].fillna('')
-    res['title_en'] = res['title_en'].fillna('')
-    res['title_zh'] = res['title_zh'].fillna('')
-    res['search'] = res['title_ja'] + '\\n' + res['title_en'] + '\\n' + res['title_zh'] + '\\n' + res['alias']
-    res['search'] = res['search'].str.replace('\\n', ' ', regex=False)
-    res.drop(columns=['id'], inplace=True)
+    res[['p_name', 'p_latin', 'p_alias', 'title_ja', 'title_en', 'title_zh']] = res[['p_name', 'p_latin', 'p_alias', 'title_ja', 'title_en', 'title_zh']].fillna('')
+    res['search'] = res['title_ja'].astype(str) + res['title_en'].astype(str) + res['title_zh'].astype(str) + res['alias'].astype(str) + res['p_name'].astype(str) + res['p_latin'].astype(str) + res['p_alias'].astype(str)
+    res['search'] = res['search'].apply(purify)
+    res.drop(columns=['id', 'p_latin', 'p_alias'], inplace=True)
     res['c_rating'] = res['c_rating'].astype(np.int16) / 100
     res['c_average'] = res['c_average'].astype(np.int16) / 100
     res.sort_values(by=['c_rating', 'c_average'], ascending=[False, False], inplace=True)
     res['rank'] = np.arange(1, len(res) + 1)
-    res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
+    res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.3f')
+
+def _ulist_vns():
+    ulist_vns = read("ulist_vns") # uid	vid	added	lastmod	vote_date	started	finished	vote	notes	labels
+    print(f"ulist_vns.shape: {ulist_vns.shape}")
+    vid = vid_load()
+    ulist_vns = ulist_vns[(ulist_vns['vid'].isin(vid))]
+    # labels is a int array, e.g. {2,7}
+    dist = pd.read_csv(os.path.join(out_dir, "dist.csv"))
+    dist['vid'] = vid
+    # for each work; for labels in 1,2,3,4,5; count the appearance of each label (Playing, Finished, Stalled, Dropped, Wishlist)
+    def parse_labels(label_str):
+        try:
+            return [int(x) for x in label_str.strip('{}').split(',') if x.strip().isdigit()]
+        except:
+            return []
+    ulist_vns['label_set'] = ulist_vns['labels'].apply(parse_labels)
+    for l in range(1, 6):
+        ulist_vns[f'l{l}'] = ulist_vns['label_set'].apply(lambda s: l in s)
+    def extract_min(label_set):
+        _ = label_set[0]
+        return _ if _ <= 5 else 0
+    ulist_vns['state'] = ulist_vns['label_set'].apply(extract_min)
+    # aggregate l1, l2, l3, l4, l5 and total collection sum and save to dist
+    ulist_vid = ulist_vns.groupby('vid')
+    dist['collection'] = ulist_vid['vid'].transform('count')
+    dist[['l1', 'l2', 'l3', 'l4', 'l5']] = ulist_vid[['l1', 'l2', 'l3', 'l4', 'l5']].transform('sum')
+    dist[['collection', 'l1', 'l2', 'l3', 'l4', 'l5']] = dist[['collection', 'l1', 'l2', 'l3', 'l4', 'l5']].fillna(0).astype(np.int16)
+
+    ulist_vns = ulist_vns[ulist_vns['vote'] != '\\N']
+    ulist_vns = ulist_vns[['uid', 'vid', 'vote_date', 'vote', 'notes', 'state']]
+    ulist_min = ulist_vns.copy()
+    ulist_min = ulist_min[['uid', 'vid', 'vote']]
+    print(f"ulist_min.shape: {ulist_min.shape}")
+    ulist_min.to_csv(os.path.join(out_dir, "ulist_min.csv"), index=False)
+
+    ulist_cpy = ulist_vns.copy()
+    ulist_cpy = ulist_cpy[(~ulist_cpy['notes'].isna())]
+    print(f"ulist_cpy.shape: {ulist_cpy.shape}")
+    uid_list = ulist_cpy['uid'].unique()
+    ulist_vns = ulist_vns[ulist_vns['uid'].isin(uid_list)]
+    print(f"ulist_vns.shape: {ulist_vns.shape}")
+
+    dist.to_csv(os.path.join(out_dir, "dist.csv"), index=False, float_format='%.3f')
+    ulist_vns.to_csv(os.path.join(out_dir, "ulist_vns.csv"), index=False)
+
+def _stat():
+    import subprocess
+    def count_lines(filename):
+        result = subprocess.run(['wc', '-l', filename], stdout=subprocess.PIPE, text=True)
+        return int(result.stdout.split()[0])
+    cnts = {}
+    for table in ['chars', 'chars_traits', 'image_votes', 'images', 'producers', 'releases', 'staff', 'tags', 'tags_vn', 'traits', 'ulist_vns', 'users', 'vn']:
+        cnts[table] = count_lines(os.path.join(db_dir, table)) - 1
+    ulist_vns = read("ulist_vns")
+    total_collection = ulist_vns.shape[0]
+    def parse_labels(label_str):
+        try:
+            return [int(x) for x in label_str.strip('{}').split(',') if x.strip().isdigit()]
+        except:
+            return []
+    ulist_vns['label_set'] = ulist_vns['labels'].apply(parse_labels)
+    for l in range(1, 6):
+        ulist_vns[f'l{l}'] = ulist_vns['label_set'].apply(lambda s: l in s)
+    lsum = ulist_vns[['l1', 'l2', 'l3', 'l4', 'l5']].sum()
+    vote_np = ulist_vns['vote'].to_numpy()
+    vote_np = vote_np[vote_np != '\\N']
+    vote_np = (vote_np.astype(np.float16) / 10).astype(np.int16)
+    vsum = np.zeros(11, dtype=int)
+    for a in range(1, 11):
+        vsum[a] = np.sum(vote_np == a)
+    _mean, _std = np.mean(vote_np), np.std(vote_np)
+    ulist_vns = ulist_vns[ulist_vns['vote'] != '\\N']
+    ulist_vns['vote_date'] = pd.to_datetime(ulist_vns['vote_date'], format='%Y-%m-%d')
+    ulist_vns['year'] = ulist_vns['vote_date'].dt.year
+    ulist_vns['vote'] = vote_np
+    ulist_vns = ulist_vns.groupby('year').agg({'vote': ['count', 'mean', 'std']})
+    year_data = ulist_vns['vote'].reset_index()
+    year_data.columns = ['year', 'count', 'mean', 'std']
+    json_dump({
+        'count': cnts,
+        'collection': total_collection,
+        'vote_mean': _mean,
+        'vote_std': _std,
+        'votes': vsum.tolist(),
+        'labels': lsum.tolist(),
+        'year_data': year_data.to_dict(orient='records'),
+    }, os.path.join(out_dir, "stat.json"))
+
+def minimize_dataset():
+    # _ulist_vns()
+    _stat()
 
 def main():
     # partial_order()
     # full_order()
-    postfix()
+    # postfix()
+    minimize_dataset()
 
 if __name__ == "__main__":
     main()
