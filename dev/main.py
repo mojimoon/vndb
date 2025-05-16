@@ -26,7 +26,7 @@ def load(table):
     return df
 
 def connect():
-    from supabase import create_client, Client
+    from supabase import create_client
     if SUPABASE_URL is None or SUPABASE_KEY is None:
         raise ValueError("Supabase URL or key is not set in environment variables")
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -63,7 +63,6 @@ def update(schema, df, batch_size=10000):
     else:
         print(f"Table {schema} is not empty, upserting data")
         upsert(sp, schema, df, batch_size)
-    sp.close()
 
 min_vote = 30
 min_common_vote = 5
@@ -233,7 +232,7 @@ def partial_order():
         np.add.at(win_count, idx_i[eq_mask], 0.5)
         np.add.at(win_count, idx_j[eq_mask], 0.5)
 
-        u[s:e, 3] = rankdata(win_count, method='average') / n
+        u[s:e, 3] = rankdata(win_count, method='average') / (n + 1)
 
     ulist_vns['sp'] = np.round(u[:, 3] * 10000).astype(int)
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
@@ -245,16 +244,16 @@ def partial_order():
                 if tv[i, j] >= min_common_vote:
                     f.write(f"{l_vid[i]},{l_vid[j]},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
 
-def ari_geo():
+def ag3d():
     vn, N, l_vid, vid2idx = setup_vn()
 
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
     ulist_vns.iloc[:, 1] = ulist_vns.iloc[:, 1].map(vid2idx)
-    ulist_vns = ulist_vns[['uid', 'vid', 'vote', 'norm']].to_numpy()
-    ulist_vns[:, 3] = np.maximum(ulist_vns[:, 3], 1)
+    ulist_vns = ulist_vns[['uid', 'vid', 'vote', 'sp']].to_numpy()
+    # ulist_vns[:, 3] = np.maximum(ulist_vns[:, 3], 1)
     M = ulist_vns.shape[0]
 
-    ari_geo = np.zeros((N, N, 8), dtype=np.float32)
+    ag3d = np.zeros((N, N, 6), dtype=np.float32)
 
     uids, idx_start = np.unique(ulist_vns[:, 0], return_index=True)
     idx_end = np.r_[idx_start[1:], M]
@@ -269,33 +268,29 @@ def ari_geo():
         norms = arr[:, 3]
         idx_i, idx_j = np.triu_indices(n, k=1)
         v1, v2 = indices[idx_i], indices[idx_j]
-        ari_geo[v1, v2, 0] += votes[idx_i]
-        ari_geo[v1, v2, 1] += votes[idx_j]
-        ari_geo[v1, v2, 2] += np.log10(votes[idx_i])
-        ari_geo[v1, v2, 3] += np.log10(votes[idx_j])
-        ari_geo[v1, v2, 4] += norms[idx_i]
-        ari_geo[v1, v2, 5] += norms[idx_j]
-        ari_geo[v1, v2, 6] += np.log10(norms[idx_i])
-        ari_geo[v1, v2, 7] += np.log10(norms[idx_j])
+        ag3d[v1, v2, 0] += votes[idx_i]
+        ag3d[v1, v2, 1] += votes[idx_j]
+        ag3d[v1, v2, 2] += np.log10(votes[idx_i])
+        ag3d[v1, v2, 3] += np.log10(votes[idx_j])
+        ag3d[v1, v2, 4] += norms[idx_i]
+        ag3d[v1, v2, 5] += norms[idx_j]
 
     partial_order = pd.read_csv(os.path.join(tmp, "partial_order.csv"))
 
     idx0 = partial_order.iloc[:, 0].map(vid2idx).to_numpy().astype(int)
     idx1 = partial_order.iloc[:, 1].map(vid2idx).to_numpy().astype(int)
-    ari_geo_1d = ari_geo[idx0, idx1]  # (n, 8)
-    ari_geo_1d = pd.DataFrame(ari_geo_1d, columns=['ariX', 'ariY', 'geoX', 'geoY', 'sp_ariX', 'sp_ariY', 'sp_geoX', 'sp_geoY'])
+    ag2d = ag3d[idx0, idx1]  # (n, 8)
+    ag2d = pd.DataFrame(ag2d, columns=['ariX', 'ariY', 'geoX', 'geoY', 'sp_ariX', 'sp_ariY'])
 
     tv = partial_order['tv'].to_numpy()
-    ari_geo_1d.iloc[:, 0] /= tv
-    ari_geo_1d.iloc[:, 1] /= tv
-    ari_geo_1d.iloc[:, 2] = np.log10(ari_geo_1d.iloc[:, 2] / tv - 1)
-    ari_geo_1d.iloc[:, 3] = np.log10(ari_geo_1d.iloc[:, 3] / tv - 1)
-    ari_geo_1d.iloc[:, 4] /= tv
-    ari_geo_1d.iloc[:, 5] /= tv
-    ari_geo_1d.iloc[:, 6] = np.log10(ari_geo_1d.iloc[:, 6] / tv - 2)
-    ari_geo_1d.iloc[:, 7] = np.log10(ari_geo_1d.iloc[:, 7] / tv - 2)
+    ag2d.iloc[:, 0] /= tv
+    ag2d.iloc[:, 1] /= tv
+    ag2d.iloc[:, 2] = np.power(ag2d.iloc[:, 2] / tv - 1, 10) # max = 100 -> 10
+    ag2d.iloc[:, 3] = np.power(ag2d.iloc[:, 3] / tv - 1, 10)
+    ag2d.iloc[:, 4] /= tv
+    ag2d.iloc[:, 5] /= tv
 
-    ari_geo_1d.to_csv(os.path.join(tmp, "ari_geo.csv"), index=False)
+    ag2d.to_csv(os.path.join(tmp, "ag3d.csv"), index=False)
 
 def upload_ulist(offset=0):
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
@@ -516,6 +511,6 @@ def setup_po(lim=None):
 # _vn()
 # _ulist_vns()
 # partial_order()
-upload_ulist()
-# ari_geo()
+# upload_ulist()
+ag3d()
 # setup_po()
