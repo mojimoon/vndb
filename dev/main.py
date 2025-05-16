@@ -31,6 +31,11 @@ def connect():
         raise ValueError("Supabase URL or key is not set in environment variables")
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def upsert(schema, df):
+    sp = connect()
+    data = df.to_dict(orient="records")
+    sp.table(schema).upsert(data).execute()
+
 min_vote = 30
 min_common_vote = 5
 
@@ -84,9 +89,9 @@ def _ulist_vns():
     ulist_vns = ulist_vns[(ulist_vns['vid'].isin(ids)) & (ulist_vns['vote'] != '\\N')]
     ulist_vns['uid'] = ulist_vns['uid'].str[1:].astype(int)
     ulist_vns['vote'] = ulist_vns['vote'].astype(int)
-    ulist_vns['vote10'] = (ulist_vns['vote'] + 5) // 10
+    # ulist_vns['vote10'] = (ulist_vns['vote'] + 5) // 10
     ulist_vns['state'] = ulist_vns['labels'].apply(parse_labels).apply(extract_min)
-    ulist_vns = ulist_vns[['uid', 'vid', 'lastmod', 'vote', 'vote10', 'notes', 'state']]
+    ulist_vns = ulist_vns[['uid', 'vid', 'lastmod', 'vote', 'notes', 'state']]
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
 
 def partial_order():
@@ -151,7 +156,7 @@ def partial_order():
         tot = M - _begin
         u[_begin:M, 3] = (u[_begin:M, 3] + 0.5) / tot
 
-    ulist_vns['norm'] = np.round(u[:, 3], 3)
+    ulist_vns['norm'] = np.round(u[:, 3] * 1000).astype(int)
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
 
     with open(os.path.join(tmp, "partial_order.csv"), "w") as f:
@@ -163,4 +168,8 @@ def partial_order():
 
 # _vn()
 # _ulist_vns()
-partial_order()
+# partial_order()
+
+ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
+ulist_vns['norm'] = np.round(ulist_vns['norm'] * 1000).astype(int)
+ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
