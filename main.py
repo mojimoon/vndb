@@ -454,6 +454,11 @@ def _ulist_vns():
 
     ulist_vns = ulist_vns[ulist_vns['vote'] != '\\N']
     ulist_vns = ulist_vns[['uid', 'vid', 'vote_date', 'vote', 'notes', 'state']]
+    ulist_min = ulist_vns.copy()
+    ulist_min = ulist_min[['uid', 'vid', 'vote']]
+    print(f"ulist_min.shape: {ulist_min.shape}")
+    ulist_min.to_csv(os.path.join(out_dir, "ulist_min.csv"), index=False)
+
     ulist_cpy = ulist_vns.copy()
     ulist_cpy = ulist_cpy[(~ulist_cpy['notes'].isna())]
     print(f"ulist_cpy.shape: {ulist_cpy.shape}")
