@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from multiprocessing import Pool, cpu_count
 from scipy.sparse import dok_matrix
+import re
 # from tqdm import tqdm
 
 db_dir = 'db/db'
@@ -349,6 +350,12 @@ def full_order():
 
     res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
 
+def purify(s):
+    # only keep Alphanumeric, Chinese and Japanese characters
+    s = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff\u3040-\u30ff]', '', s)
+    s = s.lower()
+    return s
+
 def postfix():
     vid = vid_load()
     vn = read("vn")
@@ -359,8 +366,24 @@ def postfix():
     assert vn.shape[0] == res.shape[0]
     vn.reset_index(drop=True, inplace=True)
 
+    releases_vn = read("releases_vn") # id	vid	rtype
+    releases_producers = read("releases_producers") # id	pid	developer	publisher
+    producers = read("producers") # id	type	lang	name	latin	alias	description
+
+    # 1 match res.vid with releases_vn.vid (first match)
+    releases_vn_first = releases_vn.drop_duplicates(subset=['vid'], keep='first')
+    res = res.merge(releases_vn_first[['vid', 'id']], on='vid', how='left')
+    # 2 match releases_vn.id with releases_producers.id where releases_producers.developer is true (first match)
+    releases_producers_dev = releases_producers[releases_producers['developer'] == 1]
+    releases_producers_dev_first = releases_producers_dev.drop_duplicates(subset=['id'], keep='first')
+    res = res.merge(releases_producers_dev_first[['id', 'pid']], on='id', how='left')
+    # 3 match releases_producers.pid with producers.id (should be unique)
+    producers = producers.rename(columns={'id': 'pid', 'name': 'p_name', 'latin': 'p_latin', 'alias': 'p_alias'})
+    res = res.merge(producers[['pid', 'p_name', 'p_latin', 'p_alias']], on='pid', how='left')
+    res.drop(columns=['id'], inplace=True)
+
     res = res.merge(vn[['id', 'alias', 'c_votecount', 'c_rating', 'c_average']], left_on='vid', right_on='id', how='left')
-    vn_titles = read("vn_titles")
+    vn_titles = read("vn_titles") # id	lang	official	title	latin
     olang = vn['olang']
     _ja, _zh, _en = vn_titles[vn_titles['lang'] == 'ja'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'en']
     res['title_ja'] = res['vid'].map(_ja.set_index('id')['title'])
@@ -383,21 +406,24 @@ def postfix():
             if len(olang_title) > 0:
                 res.loc[i, 'title_en'] = olang_title.iloc[0]['latin']
                 res.loc[i, 'title_ja'] = olang_title.iloc[0]['title']
+
+        # if pd.isna(res['title_en'][i]):
+        #     olang_title = vn_titles[(vn_titles['id'] == res['vid'][i]) & (vn_titles['lang'] == olang[i])]
+        #     if len(olang_title) > 0:
+        #         res.loc[i, 'title_en'] = olang_title.iloc[0]['latin']
         
         if zh_q and not pd.isna(res['title_en'][i]):
             res.loc[i, 'title_zh'] = res['title_en'][i]
     
-    res['title_ja'] = res['title_ja'].fillna('')
-    res['title_en'] = res['title_en'].fillna('')
-    res['title_zh'] = res['title_zh'].fillna('')
-    res['search'] = res['title_ja'] + '\\n' + res['title_en'] + '\\n' + res['title_zh'] + '\\n' + res['alias']
-    res['search'] = res['search'].str.replace('\\n', ' ', regex=False)
-    res.drop(columns=['id'], inplace=True)
+    res[['p_name', 'p_latin', 'p_alias', 'title_ja', 'title_en', 'title_zh']] = res[['p_name', 'p_latin', 'p_alias', 'title_ja', 'title_en', 'title_zh']].fillna('')
+    res['search'] = res['title_ja'].astype(str) + res['title_en'].astype(str) + res['title_zh'].astype(str) + res['alias'].astype(str) + res['p_name'].astype(str) + res['p_latin'].astype(str) + res['p_alias'].astype(str)
+    res['search'] = res['search'].apply(purify)
+    res.drop(columns=['id', 'p_latin', 'p_alias'], inplace=True)
     res['c_rating'] = res['c_rating'].astype(np.int16) / 100
     res['c_average'] = res['c_average'].astype(np.int16) / 100
     res.sort_values(by=['c_rating', 'c_average'], ascending=[False, False], inplace=True)
     res['rank'] = np.arange(1, len(res) + 1)
-    res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.4f')
+    res.to_csv(os.path.join(out_dir, "full_order.csv"), index=False, float_format='%.3f')
 
 def main():
     # partial_order()
