@@ -31,10 +31,39 @@ def connect():
         raise ValueError("Supabase URL or key is not set in environment variables")
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def upsert(schema, df):
-    sp = connect()
+def is_empty(sp, schema):
+    data = sp.table(schema).select("*").execute()
+    if data.data is None:
+        return True
+    return len(data.data) == 0
+
+def insert(sp, schema, df, batch_size=10000):
+    import time
+    df = df.where(pd.notnull(df), None)
     data = df.to_dict(orient="records")
-    sp.table(schema).upsert(data).execute()
+    for i in range(0, len(data), batch_size):
+        batch = data[i:i + batch_size]
+        sp.table(schema).insert(batch).execute()
+        time.sleep(1)
+
+def upsert(sp, schema, df, batch_size=10000):
+    import time
+    df = df.where(pd.notnull(df), None)
+    data = df.to_dict(orient="records")
+    for i in range(0, len(data), batch_size):
+        batch = data[i:i + batch_size]
+        sp.table(schema).upsert(batch).execute()
+        time.sleep(1)
+
+def update(schema, df, batch_size=10000):
+    sp = connect()
+    if is_empty(sp, schema):
+        print(f"Table {schema} is empty, inserting data")
+        insert(sp, schema, df, batch_size)
+    else:
+        print(f"Table {schema} is not empty, upserting data")
+        upsert(sp, schema, df, batch_size)
+    sp.close()
 
 min_vote = 30
 min_common_vote = 5
@@ -166,10 +195,12 @@ def partial_order():
                 if tv[i, j] >= min_common_vote:
                     f.write(f"{vid_array[i]},{vid_array[j]},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
 
+def upload_ulist_vns(offset=0):
+    ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
+    ulist_vns = ulist_vns.iloc[offset:]
+    update("ulist_vns", ulist_vns)
+
 # _vn()
 # _ulist_vns()
 # partial_order()
-
-ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
-ulist_vns['norm'] = np.round(ulist_vns['norm'] * 1000).astype(int)
-ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
+# upload_ulist_vns()
