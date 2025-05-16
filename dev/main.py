@@ -92,31 +92,39 @@ def _ulist_vns():
 def partial_order():
     vn = pd.read_csv(os.path.join(tmp, "vn_min.csv"))
     N = vn.shape[0]
+    vid_array = vn['id'].to_numpy()
+    vid2idx = {vid: idx for idx, vid in enumerate(vid_array)}
+
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
     u = ulist_vns.copy()
     u = u[['uid', 'vid', 'vote']]
-    u = u.to_numpy()
+    u['vid_idx'] = u['vid'].map(vid2idx)
+    u = u[['uid', 'vid_idx', 'vote']].to_numpy()
     M = u.shape[0]
     u = np.c_[u, np.zeros(M, dtype=float)]
-    pv, nv, tv = np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16), np.zeros((N, N), dtype=np.int16)
+
+    pv = np.zeros((N, N), dtype=np.int16)
+    nv = np.zeros((N, N), dtype=np.int16)
+    tv = np.zeros((N, N), dtype=np.int16)
+
     _begin, _end, _cur = 0, 1, u[0, 0]
     while _end < M:
         if u[_end, 0] == _cur:
             _end += 1
         else:
             for i in range(_begin, _end - 1):
-                v1, r1 = u[i, 1], u[i, 2]
+                v1, r1 = int(u[i, 1]), u[i, 2]
                 for j in range(i + 1, _end):
-                    v2, r2 = u[j, 1], u[j, 2]
+                    v2, r2 = int(u[j, 1]), u[j, 2]
                     if r1 > r2:
                         pv[v1, v2] += 1
-                        u[v1, 3] += 1
+                        u[i, 3] += 1
                     elif r1 < r2:
                         nv[v1, v2] += 1
-                        u[v2, 3] += 1
+                        u[j, 3] += 1
                     else:
-                        u[v1, 3] += 0.5
-                        u[v2, 3] += 0.5
+                        u[i, 3] += 0.5
+                        u[j, 3] += 0.5
                     tv[v1, v2] += 1
             tot = _end - _begin
             u[_begin:_end, 3] = (u[_begin:_end, 3] + 0.5) / tot
@@ -127,23 +135,23 @@ def partial_order():
     # the last group
     if _begin < M:
         for i in range(_begin, M - 1):
-            v1, r1 = u[i, 1], u[i, 2]
+            v1, r1 = int(u[i, 1]), u[i, 2]
             for j in range(i + 1, M):
-                v2, r2 = u[j, 1], u[j, 2]
+                v2, r2 = int(u[j, 1]), u[j, 2]
                 if r1 > r2:
                     pv[v1, v2] += 1
-                    u[v1, 3] += 1
+                    u[i, 3] += 1
                 elif r1 < r2:
                     nv[v1, v2] += 1
-                    u[v2, 3] += 1
+                    u[j, 3] += 1
                 else:
-                    u[v1, 3] += 0.5
-                    u[v2, 3] += 0.5
+                    u[i, 3] += 0.5
+                    u[j, 3] += 0.5
                 tv[v1, v2] += 1
         tot = M - _begin
         u[_begin:M, 3] = (u[_begin:M, 3] + 0.5) / tot
-    
-    ulist_vns['norm'] = np.round(u[:, 3] * 100).astype(np.int16)
+
+    ulist_vns['norm'] = np.round(u[:, 3], 3)
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
 
     with open(os.path.join(tmp, "partial_order.csv"), "w") as f:
@@ -151,7 +159,7 @@ def partial_order():
         for i in range(N - 1):
             for j in range(i + 1, N):
                 if tv[i, j] >= min_common_vote:
-                    f.write(f"{i},{j},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
+                    f.write(f"{vid_array[i]},{vid_array[j]},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
 
 # _vn()
 # _ulist_vns()
