@@ -606,41 +606,44 @@ def create_rankit():
     scores['vid'] = l_vid
     scores.to_csv(os.path.join(tmp, "rank_rankit.csv"), index=False, float_format='%.2f')
 
-def borda_count_merge_from_ratings(names, ratings_list):
-    # adapted from rankit.Merge.borda_count_merge
-    # names = np.asarray(names)
-    # ratings_array = np.vstack([np.asarray(r) for r in ratings_list])
-    if isinstance(names, pd.DataFrame):
-        names = names.to_numpy() # shape (N,)
-    if isinstance(ratings_list, pd.DataFrame):
-        ratings_list = ratings_list.to_numpy() # shape (M, N)
-    ranks = np.apply_along_axis(lambda x: (-x).argsort().argsort() + 1, 1, ratings_list) # shape (M, N)
-    M, N = ratings_list.shape
-    borda_count = N * M - ranks.sum(axis=1) # shape (N,)
-    ranks_final = pd.Series(borda_count).rank(method='min', ascending=False).astype(int).values # shape (N,)
-    # print(f"shapes: names: {names.shape}, ratings_array: {ratings_array.shape}, ranks: {ranks.shape}, borda_count: {borda_count.shape}, ranks_final: {ranks_final.shape}")
-    result = pd.DataFrame({'name': names, 'BordaCount': borda_count, 'rank': ranks_final})
-    result = result.sort_values(by='BordaCount', ascending=False, ignore_index=True)
-    return result
+# def borda_count_merge_from_ratings(names, ratings_list):
+#     # adapted from rankit.Merge.borda_count_merge
+#     # names = np.asarray(names)
+#     # ratings_array = np.vstack([np.asarray(r) for r in ratings_list])
+#     if isinstance(names, pd.DataFrame):
+#         names = names.to_numpy() # shape (N,)
+#     if isinstance(ratings_list, pd.DataFrame):
+#         ratings_list = ratings_list.to_numpy() # shape (M, N)
+#     ranks = np.apply_along_axis(lambda x: (-x).argsort().argsort() + 1, 1, ratings_list) # shape (M, N)
+#     M, N = ratings_list.shape
+#     borda_count = N * M - ranks.sum(axis=1) # shape (N,)
+#     ranks_final = pd.Series(borda_count).rank(method='min', ascending=False).astype(int).values # shape (N,)
+#     # print(f"shapes: names: {names.shape}, ratings_array: {ratings_array.shape}, ranks: {ranks.shape}, borda_count: {borda_count.shape}, ranks_final: {ranks_final.shape}")
+#     result = pd.DataFrame({'name': names, 'BordaCount': borda_count, 'rank': ranks_final})
+#     result = result.sort_values(by='BordaCount', ascending=False, ignore_index=True)
+#     return result
+
+def borda_count_rewritten(ratings):
+    if not isinstance(ratings, pd.DataFrame):
+        ratings = pd.DataFrame(ratings) # shape (n_items, n_methods)
+    ranks = ratings.rank(method='min', ascending=False).astype(int) # shape (n_items, n_methods)
+    n_items, n_methods = ranks.shape
+    borda_scores = (n_items * n_methods) - ranks.sum(axis=1) # shape (n_items,)
+    return borda_scores
 
 def merge_rank():
     rank_po = pd.read_csv(os.path.join(tmp, "rank_po.csv"))
+    rank_rankit = pd.read_csv(os.path.join(tmp, "rank_rankit.csv"))
     N = rank_po.shape[0]
-    indices = np.arange(N)
-    bcount = np.zeros((N, 7), dtype=np.int16)
-    merged_po = borda_count_merge_from_ratings(indices, rank_po.iloc[:, :-1])
-    np.add.at(bcount[:, 0], merged_po.iloc[:, 0].astype(int), merged_po.iloc[:, 1])
+    bcount = np.zeros((N, 8), dtype=np.int32)
+    bcount[:, 0] = borda_count_rewritten(rank_po.iloc[:, :-1])
     for i in range(5):
-        merged_rank = borda_count_merge_from_ratings(indices, rank_po.iloc[:, i*8:i*8+8])
-        np.add.at(bcount[:, i+1], merged_rank.iloc[:, 0].astype(int), merged_rank.iloc[:, 1])
-    merged_grand = borda_count_merge_from_ratings(indices, bcount[:, 0:6])
-    np.add.at(bcount[:, 6], merged_grand.iloc[:, 0].astype(int), merged_grand.iloc[:, 1])
-    bcount = pd.DataFrame(bcount, columns=['po', 'rw', 'elo', 'entropy', 'massey', 'colley', 'merged'])
+        bcount[:, i+1] = borda_count_rewritten(rank_rankit.iloc[:, i*8:i*8+8])
+    bcount[:, 6] = borda_count_rewritten(bcount[:, 1:4])
+    bcount[:, 7] = borda_count_rewritten(bcount[:, 0:6])
+    bcount = pd.DataFrame(bcount, columns=['po', 'prob', 'ari', 'geo', 'sp_ari', 'sp_geo', 'sci', 'grand'])
     bcount['vid'] = rank_po['vid']
     bcount.to_csv(os.path.join(tmp, "borda_merge.csv"), index=False)
-
-    # for a collection of 2D df, do we use 3D or an array of 2D?
-
 
 # _vn()
 # _ulist_vns()
