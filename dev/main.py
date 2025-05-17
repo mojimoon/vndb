@@ -101,6 +101,12 @@ def extract_min(state):
     _ = state[0]
     return _ if _ <= 5 else 0
 
+def parse_min(label_str):
+    if len(label_str) > 2 and label_str[1].isdigit() and not label_str[2].isdigit():
+        return int(label_str[1])
+    return 0
+    
+
 def _vn():
     vn = load("vn") # id	image	c_image	olang	l_wikidata	c_votecount	c_rating	c_average	length	devstatus	alias	l_renai	description
     vn = vn[vn['c_votecount'] != '\\N']
@@ -122,7 +128,7 @@ def _ulist_vns():
     ulist_vns['uid'] = ulist_vns['uid'].str[1:].astype(int)
     ulist_vns['vote'] = ulist_vns['vote'].astype(int)
     # ulist_vns['vote10'] = (ulist_vns['vote'] + 5) // 10
-    ulist_vns['state'] = ulist_vns['labels'].apply(parse_labels).apply(extract_min)
+    ulist_vns['state'] = ulist_vns['labels'].apply(parse_min)
     ulist_vns = ulist_vns[['uid', 'vid', 'lastmod', 'vote', 'notes', 'state']]
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
 
@@ -887,6 +893,45 @@ def generate_comparable():
     res['id'] = l_vid
     res.to_csv(os.path.join(tmp, "comparable.csv"), index=False)
 
+def general_statistics():
+    import subprocess
+    def get_file_linecount(filepath):
+        result = subprocess.run(['wc', '-l', filepath], stdout=subprocess.PIPE, text=True)
+        return int(result.stdout.split()[0])
+    
+    _dict = {}
+    genstat = pd.DataFrame(columns=['key', 'count', 'mean', 'std'])
+    for k in ['chars', 'images', 'producers', 'releases', 'staff', 'tags', 'traits', 'ulist_vns', 'users', 'vn']:
+        _dict[k] = get_file_linecount(os.path.join(dump, "db", k))
+
+    ulist_vns = load("ulist_vns")
+    ulist_vns["label_set"] = ulist_vns["labels"].apply(parse_labels)
+    for l in range(1, 6):
+        ulist_vns[f"l{l}"] = ulist_vns["label_set"].apply(lambda s: l in s)
+        _dict[f"ulist_state_{l}"] = ulist_vns[f"l{l}"].sum()
+
+    genstat = pd.concat([genstat, pd.DataFrame(_dict.items(), columns=['key', 'count'])], ignore_index=True)
+
+    ulist_vns = ulist_vns[(ulist_vns['vote'] != '\\N') & (ulist_vns['vote_date'] != '\\N')]
+    vote_np = ulist_vns["vote"].to_numpy()
+    vote_np = (vote_np.astype(np.float16) / 10).astype(np.int16)
+    vsum = np.zeros(11, dtype=int)
+    for a in range(1, 11):
+        vsum[a] = np.sum(vote_np == a)
+    _mean, _std = np.mean(vote_np), np.std(vote_np)
+    genstat = pd.concat([genstat, pd.DataFrame({'key': 'vote', 'count': len(vote_np), 'mean': _mean, 'std': _std}, index=[0])], ignore_index=True)
+    genstat = pd.concat([genstat, pd.DataFrame({'key': f'vote_{i}', 'count': vsum[i]} for i in range(11))], ignore_index=True)
+    ulist_vns['vote_date'] = pd.to_datetime(ulist_vns['vote_date'], format='%Y-%m-%d')
+    ulist_vns['year'] = ulist_vns['vote_date'].dt.year
+    ulist_vns['vote'] = vote_np
+    ulist_vns = ulist_vns.groupby('year').agg({'vote': ['count', 'mean', 'std']})
+    year_data = ulist_vns['vote'].reset_index()
+    year_data.columns = ['key', 'count', 'mean', 'std']
+    genstat = pd.concat([genstat, year_data], ignore_index=True)
+    genstat['key'] = genstat['key'].astype(str)
+    genstat['count'] = genstat['count'].astype(int)
+    genstat.to_csv(os.path.join(tmp, "genstat.csv"), index=False, float_format='%.3f')
+
 # _vn()
 # _ulist_vns()
 # partial_order()
@@ -899,4 +944,5 @@ def generate_comparable():
 # handle_vn_info()
 # handle_relations()
 # handle_producer()
-generate_comparable()
+# generate_comparable()
+general_statistics()
