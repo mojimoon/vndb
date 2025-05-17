@@ -486,41 +486,36 @@ def rankit_wrapper(data, ranker='massey'):
     from rankit.Ranker import MasseyRanker, ColleyRanker, KeenerRanker, MarkovRanker, ODRanker, DifferenceRanker, EloRanker
     table = None
     if ranker == 'massey':
-        ranker = MasseyRanker()
+        worker = MasseyRanker()
     elif ranker == 'colley':
-        ranker = ColleyRanker()
+        worker = ColleyRanker()
     elif ranker == 'keener':
-        ranker = KeenerRanker()
-    elif ranker == 'markov_rv':
-        hscore = data.iloc[:, 2] / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
-        vscore = data.iloc[:, 3] / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
-        data['hscore'] = hscore
-        data['vscore'] = vscore
+        worker = KeenerRanker()
+    elif ranker.startswith('markov'):
+        if ranker == 'markov_rv':
+            hscore = data.iloc[:, 2] / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
+            vscore = data.iloc[:, 3] / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
+        elif ranker == 'markov_rdv':
+            hscore = (data.iloc[:, 2] - data.iloc[:, 3]) / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
+            vscore = -hscore
+            hscore = np.maximum(0, hscore)
+            vscore = np.maximum(0, vscore)
+        elif ranker == 'markov_sdv':
+            hscore = data.iloc[:, 2] - data.iloc[:, 3]
+            vscore = -hscore
+            hscore = np.maximum(0, hscore)
+            vscore = np.maximum(0, vscore)
+        data.iloc[:, 2] = hscore
+        data.iloc[:, 3] = vscore
         table = Table(data)
-        ranker = MarkovRanker()
-    elif ranker == 'markov_rdv':
-        hscore = (data.iloc[:, 2] - data.iloc[:, 3]) / (data.iloc[:, 2] + data.iloc[:, 3] + 1e-10)
-        vscore = -hscore
-        hscore = np.maximum(0, hscore)
-        vscore = np.maximum(0, vscore)
-        data['hscore'] = hscore
-        data['vscore'] = vscore
-        table = Table(data)
-    elif ranker == 'markov_sdv':
-        hscore = data.iloc[:, 2] - data.iloc[:, 3]
-        vscore = -hscore
-        hscore = np.maximum(0, hscore)
-        vscore = np.maximum(0, vscore)
-        data['hscore'] = hscore
-        data['vscore'] = vscore
-        table = Table(data)
+        worker = MarkovRanker()
     elif ranker == 'od':
-        ranker = ODRanker()
+        worker = ODRanker()
     elif ranker == 'difference':
-        ranker = DifferenceRanker()
+        worker = DifferenceRanker()
     if table is None:
         table = Table(data)
-    return ranker.rank(table)
+    return worker.rank(table)
 
 def setup_po(lim=None):
     vn, N, l_vid, vid2idx = setup_vn()
@@ -572,14 +567,48 @@ def create_rank():
     scores[:, 5] = partial_order_elo_v2(po, N)
     scores[:, 6] = partial_order_entropy(po, N)
     scores[:, 7] = partial_order_vi(po, N)
-    scores = pd.DataFrame(scores, columns=['po_total', 'po_percent', 'po_simple', 'po_weight', 'po_rw', 'po_elo', 'po_entropy', 'po_vi'])
+    scores = pd.DataFrame(scores, columns=['total@po', 'percent@po', 'simple@po', 'weight@po', 'rw@po', 'elo@po', 'entropy@po', 'vi@po'])
     scores['vid'] = l_vid
-    scores = scores[['vid', 'po_total', 'po_percent', 'po_simple', 'po_weight', 'po_rw', 'po_elo', 'po_entropy', 'po_vi']]
     scores.to_csv(os.path.join(tmp, "rank_po.csv"), index=False, float_format='%.4f')
+
+def create_rankit():
+    vn, N, l_vid, vid2idx = setup_vn()
+    po = pd.read_csv(os.path.join(tmp, "partial_order.csv")) # i,j,pv,nv,tv
+    po.iloc[:, 0] = po.iloc[:, 0].map(vid2idx)
+    po.iloc[:, 1] = po.iloc[:, 1].map(vid2idx)
+    po = po.to_numpy()
+    ari_geo = pd.read_csv(os.path.join(tmp, "ari_geo.csv"))
+    ari_geo = ari_geo.to_numpy()
+
+    variables = ['prob', 'ari', 'geo', 'sp_ari', 'sp_geo']
+    rankers = ['massey', 'colley', 'keener', 'markov_rv', 'markov_rdv', 'markov_sdv', 'od', 'difference']
+    scores = np.zeros((N, len(variables) * len(rankers)), dtype=np.float32)
+    for g, var in enumerate(variables):
+        if g == 0:
+            dt = po[:, 0:4]
+        elif g == 1:
+            dt = np.c_[po[:, 0:2], ari_geo[:, 0:2]]
+        elif g == 2:
+            dt = np.c_[po[:, 0:2], ari_geo[:, 2:4]]
+        elif g == 3:
+            dt = np.c_[po[:, 0:2], ari_geo[:, 4:6]]
+        elif g == 4:
+            dt = np.c_[po[:, 0:2], ari_geo[:, 6:8]]
+        df = pd.DataFrame(dt, columns=['host', 'visit', 'hscore', 'vscore'])
+        for h, ranker in enumerate(rankers):
+            _ = g * len(rankers) + h
+            res = rankit_wrapper(df, ranker)
+            # return format: name, rating, rank -> scores[name] = rating
+            np.add.at(scores[:, _], res.iloc[:, 0].astype(int), res.iloc[:, 1])
+    
+    scores = pd.DataFrame(scores, columns=[f"{ranker}@{var}" for var in variables for ranker in rankers])
+    scores['vid'] = l_vid
+    scores.to_csv(os.path.join(tmp, "rank_rankit.csv"), index=False, float_format='%.4f')
 
 # _vn()
 # _ulist_vns()
 # partial_order()
 # upload_ulist()
 # ari_geo()
-create_rank()
+# create_rank()
+create_rankit()
