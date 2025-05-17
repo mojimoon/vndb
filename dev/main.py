@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
+import re
 
 pwd = os.path.dirname(os.path.abspath(__file__))
 root = os.path.dirname(pwd)
@@ -727,6 +728,84 @@ def visualize_rank():
     plt.tight_layout()
     plt.savefig(os.path.join(root, "assets", "kendall_heatmap_selected.png"))
 
+def purify(s):
+    # only keep Alphanumeric, Chinese and Japanese characters
+    s = s.replace('\\n', '')
+    s = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff\u3040-\u30ff]', '', s)
+    s = s.lower()
+    return s
+
+def handle_vn_info():
+    vn = pd.read_csv(os.path.join(tmp, "vn_min.csv"))
+    vids = vn['id']
+    vn_titles = load("vn_titles") # id	lang	official	title	latin
+    vn_titles['id'] = vn_titles['id'].str[1:].astype(int)
+    olang = vn['olang']
+    _ja, _zh, _en = vn_titles[vn_titles['lang'] == 'ja'], vn_titles[vn_titles['lang'] == 'zh-Hans'], vn_titles[vn_titles['lang'] == 'en']
+    vn['title_ja'] = vn['id'].map(_ja.set_index('id')['title'])
+    vn['title_zh'] = vn['id'].map(_zh.set_index('id')['title'])
+    vn['title_en'] = vn['id'].map(_en.set_index('id')['title'])
+
+    for i in range(len(vn)):
+        zh_q = pd.isna(vn['title_zh'][i])
+        if zh_q and not pd.isna(vn['alias'][i]):
+            alias = vn['alias'][i]
+            _ = alias.split('\\n')
+            _ = [a for a in _ if any('\u4e00' <= c <= '\u9fff' for c in a) and not any('\u3040' <= c <= '\u30ff' for c in a)]
+            # _ = sorted(_, key=len, reverse=True)
+            if len(_) > 0:
+                vn.loc[i, 'title_zh'] = _[0]
+                zh_q = False
+
+        if pd.isna(vn['title_en'][i]) and pd.isna(vn['title_ja'][i]):
+            olang_title = vn_titles[(vn_titles['id'] == vn['id'][i]) & (vn_titles['lang'] == olang[i])]
+            if len(olang_title) > 0:
+                vn.loc[i, 'title_en'] = olang_title.iloc[0]['latin']
+                vn.loc[i, 'title_ja'] = olang_title.iloc[0]['title']
+
+        # if pd.isna(vn['title_en'][i]):
+        #     olang_title = vn_titles[(vn_titles['id'] == vn['id'][i]) & (vn_titles['lang'] == olang[i])]
+        #     if len(olang_title) > 0:
+        #         vn.loc[i, 'title_en'] = olang_title.iloc[0]['latin']
+        
+        if zh_q and not pd.isna(vn['title_en'][i]):
+            vn.loc[i, 'title_zh'] = vn['title_en'][i]
+    
+    vn[['title_ja', 'title_zh', 'title_en']] = vn[['title_ja', 'title_zh', 'title_en']].fillna('')
+    vn['search'] = vn['title_ja'].astype(str) + vn['title_zh'].astype(str) + vn['title_en'].astype(str) + vn['alias'].astype(str)
+    vn['search'] = vn['search'].apply(purify)
+
+    releases_vn = load("releases_vn") # id	vid	rtype
+    releases_vn['vid'] = releases_vn['vid'].str[1:].astype(int)
+    releases_vn = releases_vn[releases_vn['vid'].isin(vids)]
+
+    # For each vid, find the first id where rtype == 'complete'. If none, fallback to the first id for that vid.
+    def get_first_release(group):
+        complete = group[group['rtype'] == 'complete']
+        if not complete.empty:
+            return complete.iloc[0]['id']
+        else:
+            return group.iloc[0]['id']
+
+    first_release_ids = releases_vn.groupby('vid', sort=False).apply(get_first_release)
+    vn['rid'] = vn['id'].map(first_release_ids)
+    releases = load("releases") # id	gtin	olang	released	... released = YYYYMMDD (int)
+    vn['released'] = vn['rid'].map(releases.set_index('id')['released'])
+    releases_producers = load("releases_producers") # id	pid	developer	publisher
+    # releases_producers = releases_producers[releases_producers['developer'] == 't']
+    # vn['developer'] = vn['rid'].map(releases_producers.set_index('id')['pid'])
+    def get_first_producer(group):
+        developer = group[group['developer'] == 't']
+        if not developer.empty:
+            return developer.iloc[0]['pid']
+        else:
+            return group.iloc[0]['pid']
+    rp = releases_producers.groupby('id', sort=False).apply(get_first_producer)
+    vn['pid'] = vn['rid'].map(rp)
+    # vn['pid'] = vn['pid'].str[1:].astype(int)
+
+    vn.to_csv(os.path.join(tmp, "vn_min.csv"), index=False)
+
 # _vn()
 # _ulist_vns()
 # partial_order()
@@ -734,10 +813,6 @@ def visualize_rank():
 # ari_geo()
 # create_rank()
 # create_rankit()
-merge_rank()
-visualize_rank()
-
-def main():
-    _vn()
-    _ulist_vns()
-    partial_order()
+# merge_rank()
+# visualize_rank()
+handle_vn_info()
