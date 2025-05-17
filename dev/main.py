@@ -817,7 +817,7 @@ def handle_relations():
     vn_relations['id'] = vn_relations['id'].str[1:].astype(int)
     vn_relations = vn_relations[(vn_relations['vid'].isin(vids)) & (vn_relations['id'].isin(vids)) & (vn_relations['official'] == 't')]
     vn_relations.drop(columns=['official'], inplace=True)
-    vn_relations.rename(columns={'id': 'id0', 'vid': 'id1'}, inplace=True)
+    vn_relations.rename(columns={'id': 'i', 'vid': 'j'}, inplace=True)
     vn_relations.to_csv(os.path.join(tmp, "vn_relations_min.csv"), index=False)
 
 def handle_producer():
@@ -830,6 +830,65 @@ def handle_producer():
     producers['search'] = producers['search'].apply(purify)
     producers = producers[['id', 'name', 'latin', 'search']]
     producers.to_csv(os.path.join(tmp, "producers_min.csv"), index=False)
+    with open(os.path.join(tmp, "producers_min.csv"), 'a') as f:
+        f.write("0,,,\n")
+
+def generate_comparable():
+    vn, N, l_vid, vid2idx = setup_vn()
+    po = pd.read_csv(os.path.join(tmp, "partial_order.csv"))
+    po.iloc[:, 0] = po.iloc[:, 0].map(vid2idx)
+    po.iloc[:, 1] = po.iloc[:, 1].map(vid2idx)
+    po['sim'] = po['pv'] / (po['pv'] + po['nv']) * np.log10(po['tv'])
+    po['cont'] = (1 - np.abs(po['pv'] - po['nv']) / (po['pv'] + po['nv'])) * np.log10(po['tv'])
+    po['pos'] = po['pv'] / (po['pv'] + po['nv']) * np.log10(po['tv'])
+    po['neg'] = po['nv'] / (po['pv'] + po['nv']) * np.log10(po['tv'])
+    '''
+    i, j, pv, nv, tv -> copy to j, i, nv, pv, tv
+    find up to 10 pairs for each i
+    (1) most popular: tv
+    (2) most similar: (tv - nv - pv) / tv * log10(tv)
+    (3) most controversial: [1 - abs(pv - nv) / (pv + nv)] * log10(tv)
+    (4) most positive: pv / tv * log10(tv)
+    (5) most negative: nv / tv * log10(tv)
+    (6) related work: vn_relations
+    '''
+    po = pd.concat([po, po.rename(columns={'i': 'j', 'j': 'i', 'pv': 'nv', 'nv': 'pv', 'pos': 'neg', 'neg': 'pos'})], ignore_index=True)
+
+    po = po.sort_values(['i', 'tv'], ascending=[True, False]).groupby('i').head(10)
+    po['rank'] = po.groupby('i').cumcount()
+    r1 = po.pivot(index='i', columns='rank', values='j').fillna(-1).astype(int)
+    r1.columns = [f"t{i}" for i in range(10)]
+    po = po.sort_values(['i', 'sim'], ascending=[True, False]).groupby('i').head(10)
+    po['rank'] = po.groupby('i').cumcount()
+    r2 = po.pivot(index='i', columns='rank', values='j').fillna(-1).astype(int)
+    r2.columns = [f"s{i}" for i in range(10)]
+    po = po.sort_values(['i', 'cont'], ascending=[True, False]).groupby('i').head(10)
+    po['rank'] = po.groupby('i').cumcount()
+    r3 = po.pivot(index='i', columns='rank', values='j').fillna(-1).astype(int)
+    r3.columns = [f"c{i}" for i in range(10)]
+    po = po.sort_values(['i', 'pos'], ascending=[True, False]).groupby('i').head(10)
+    po['rank'] = po.groupby('i').cumcount()
+    r4 = po.pivot(index='i', columns='rank', values='j').fillna(-1).astype(int)
+    r4.columns = [f"p{i}" for i in range(10)]
+    po = po.sort_values(['i', 'neg'], ascending=[True, False]).groupby('i').head(10)
+    po['rank'] = po.groupby('i').cumcount()
+    r5 = po.pivot(index='i', columns='rank', values='j').fillna(-1).astype(int)
+    r5.columns = [f"n{i}" for i in range(10)]
+    vn_relations = pd.read_csv(os.path.join(tmp, "vn_relations_min.csv")) # i,j,relation
+    vn_relations = vn_relations.sort_values(['i', 'j'], ascending=[True, True]).groupby('i').head(10)
+    vn_relations['rank'] = vn_relations.groupby('i').cumcount()
+    # r6 = vn_relations.pivot(index='i', columns='rank', values='j').fillna(-1).astype(int)
+    # r6.columns = [f"r{i}" for i in range(10)]
+    # horizontally stack all the dataframes to N*60 matrix
+    # print(r1.shape, r2.shape, r3.shape, r4.shape, r5.shape)
+    res = pd.concat([r1, r2, r3, r4, r5], axis=1, ignore_index=True)
+    # print(res.shape)
+    # res['id'] = l_vid
+    # apply i -> l_vid[i] to all columns
+    res = res.applymap(lambda x: l_vid[x] if x >= 0 else -1)
+    res.columns = r1.columns.tolist() + r2.columns.tolist() + r3.columns.tolist() + r4.columns.tolist() + r5.columns.tolist()
+    res['id'] = l_vid
+    res.to_csv(os.path.join(tmp, "comparable.csv"), index=False)
 
 # _vn()
 # _ulist_vns()
@@ -843,3 +902,4 @@ def handle_producer():
 # handle_vn_info()
 # handle_relations()
 # handle_producer()
+generate_comparable()
