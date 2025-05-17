@@ -336,22 +336,22 @@ def partial_order_classical(data, N):
             scores[:, k] /= appear
     return scores
 
-def partial_order_bradley_terry(data, N, max_iter=100, eps=1e-6):
-    skill = np.ones(N)
-    for _ in range(max_iter):
-        last_skill = skill.copy()
-        n, d = np.zeros(N), np.zeros(N)
-        for row in data:
-            i, j, pv, nv, tv = row
-            n[i] += pv
-            d[i] += (pv + nv) / (skill[i] + skill[j])
-            n[j] += nv
-            d[j] += (pv + nv) / (skill[i] + skill[j])
-        skill = n / (d + 1e-10)
-        skill /= skill.sum()
-        if np.all(np.abs(skill - last_skill) < eps):
-            break
-    return skill
+# def partial_order_bradley_terry(data, N, max_iter=100, eps=1e-6):
+#     skill = np.ones(N)
+#     for _ in range(max_iter):
+#         last_skill = skill.copy()
+#         n, d = np.zeros(N), np.zeros(N)
+#         for row in data:
+#             i, j, pv, nv, tv = row
+#             n[i] += pv
+#             d[i] += (pv + nv) / (skill[i] + skill[j])
+#             n[j] += nv
+#             d[j] += (pv + nv) / (skill[i] + skill[j])
+#         skill = n / (d + 1e-10)
+#         skill /= skill.sum()
+#         if np.all(np.abs(skill - last_skill) < eps):
+#             break
+#     return skill
 
 def partial_order_random_walk(data, N, alpha=0.85, max_iter=100, eps=1e-6):
     mat = np.zeros((N, N))
@@ -380,19 +380,19 @@ def partial_order_random_walk(data, N, alpha=0.85, max_iter=100, eps=1e-6):
     scores = 1 / scores
     return scores
 
-def partial_order_elo(data, N, K=32, base=1500, divisor=400):
-    rating = np.full(N, base)
-    for row in data:
-        i, j, pv, nv, tv = row
-        for _ in range(pv):
-            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
-            rating[i] += K * (1 - E0)
-            rating[j] += K * (0 - (1 - E0))
-        for _ in range(nv):
-            E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
-            rating[i] += K * (0 - E0)
-            rating[j] += K * (1 - (1 - E0))
-    return rating
+# def partial_order_elo(data, N, K=32, base=1500, divisor=400):
+#     rating = np.full(N, base)
+#     for row in data:
+#         i, j, pv, nv, tv = row
+#         for _ in range(pv):
+#             E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
+#             rating[i] += K * (1 - E0)
+#             rating[j] += K * (0 - (1 - E0))
+#         for _ in range(nv):
+#             E0 = 1 / (1 + 10 ** ((rating[j] - rating[i]) / divisor))
+#             rating[i] += K * (0 - E0)
+#             rating[j] += K * (1 - (1 - E0))
+#     return rating
 
 def partial_order_elo_v2(data, N, K=32, base=1500, divisor=400, delta_thres=1e-3):
     rating = np.full(N, base)
@@ -436,17 +436,50 @@ def partial_order_entropy(data, N):
     scores[:, 1] -= np.bincount(data[:, 1].astype(int), weights=ent, minlength=N)
     return scores[:, 0] / (scores[:, 1] + 1e-10)
 
-def partial_order_spectral(data, N):
-    W = np.zeros((N, N))
-    for row in data:
-        i, j, pv, nv, tv = row
-        W[i, j] += pv / tv
-        W[j, i] += nv / tv
-    D = np.diag(W.sum(axis=1))
-    L = D - W
-    eigvals, eigvecs = np.linalg.eigh(L)
-    fiedler = eigvecs[:, 1]
-    return fiedler
+# def partial_order_spectral(data, N):
+#     W = np.zeros((N, N))
+#     for row in data:
+#         i, j, pv, nv, tv = row
+#         W[i, j] += pv / tv
+#         W[j, i] += nv / tv
+#     D = np.diag(W.sum(axis=1))
+#     L = D - W
+#     eigvals, eigvecs = np.linalg.eigh(L)
+#     fiedler = eigvecs[:, 1]
+#     return fiedler
+
+# def partial_order_embedding(data, N):
+#     import networkx as nx
+#     from node2vec import Node2Vec
+
+#     G = nx.DiGraph()
+#     G.add_nodes_from(range(N))
+#     for row in data:
+#         i, j, pv, nv, tv = row
+#         if pv > nv:
+#             G.add_edge(i, j, weight=pv - nv)
+#         elif nv > pv:
+#             G.add_edge(j, i, weight=nv - pv)
+#     node2vec = Node2Vec(G, dimensions=16, walk_length=30, num_walks=200)
+#     model = node2vec.fit(window=10, min_count=1, batch_words=4)
+
+#     scores = np.zeros(N)
+#     for i in range(N):
+#         if str(i) in model.wv:
+#             scores[i] = np.mean(model.wv[str(i)])
+#     return scores.reshape(-1, 1)
+
+def partial_order_vi(data, N, iters=100, alpha=0.01):
+    scores = np.random.normal(0, 1, N)
+    for _ in range(iters):
+        i, j, pv, nv, tv = data[:, 0], data[:, 1], data[:, 2], data[:, 3], data[:, 4]
+        delta = scores[i] - scores[j]
+        p_ab = 1 / (1 + np.exp(-delta))
+        gradient = (pv - tv * p_ab)
+        scores[i] += alpha * gradient
+        scores[j] -= alpha * gradient
+    
+    return scores
 
 def rankit_wrapper(data, ranker='massey'):
     from rankit.Table import Table
@@ -522,7 +555,7 @@ def setup_po(lim=None):
         # po = po.rename(columns={po.columns[0]: 'host', po.columns[1]: 'visit', po.columns[2]: 'hscore', po.columns[3]: 'vscore'})
         # po = po[['host', 'visit', 'hscore', 'vscore']]
         N = lim
-        partial_order_spectral(po, N)
+        partial_order_vi(po, N)
     else:
         return vn, N, l_vid, vid2idx, po
 
@@ -533,18 +566,20 @@ def create_rank():
     po.iloc[:, 1] = po.iloc[:, 1].map(vid2idx)
     po = po.to_numpy()
 
-    scores = pd.DataFrame()
-    scores['idx'] = np.arange(N)
+    scores = np.zeros((N, 8), dtype=np.float32)
+    scores[:, 0:4] = partial_order_classical(po, N)
+    scores[:, 4] = partial_order_random_walk(po, N)
+    scores[:, 5] = partial_order_elo_v2(po, N)
+    scores[:, 6] = partial_order_entropy(po, N)
+    scores[:, 7] = partial_order_vi(po, N)
+    scores = pd.DataFrame(scores, columns=['po_total', 'po_percent', 'po_simple', 'po_weight', 'po_rw', 'po_elo', 'po_entropy', 'po_vi'])
     scores['vid'] = l_vid
-    _classical = partial_order_classical(po, N)
-    _random_walk = partial_order_random_walk(po, N)
-    _elo = partial_order_elo_v2(po, N)
-    _entropy = partial_order_entropy(po, N)
+    scores = scores[['vid', 'po_total', 'po_percent', 'po_simple', 'po_weight', 'po_rw', 'po_elo', 'po_entropy', 'po_vi']]
+    scores.to_csv(os.path.join(tmp, "rank_po.csv"), index=False, float_format='%.4f')
 
 # _vn()
 # _ulist_vns()
 # partial_order()
 # upload_ulist()
 # ari_geo()
-setup_po(2000)
-# create_rank()
+create_rank()
