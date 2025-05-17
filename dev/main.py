@@ -874,17 +874,14 @@ def generate_comparable():
     po['rank'] = po.groupby('i').cumcount()
     r5 = po.pivot(index='i', columns='rank', values='j').fillna(-1).astype(int)
     r5.columns = [f"n{i}" for i in range(10)]
-    vn_relations = pd.read_csv(os.path.join(tmp, "vn_relations_min.csv")) # i,j,relation
-    vn_relations = vn_relations.sort_values(['i', 'j'], ascending=[True, True]).groupby('i').head(10)
-    vn_relations['rank'] = vn_relations.groupby('i').cumcount()
+    # vn_relations = pd.read_csv(os.path.join(tmp, "vn_relations_min.csv")) # i,j,relation
+    # vn_relations = vn_relations.sort_values(['i', 'j'], ascending=[True, True]).groupby('i').head(10)
+    # vn_relations['rank'] = vn_relations.groupby('i').cumcount()
     # r6 = vn_relations.pivot(index='i', columns='rank', values='j').fillna(-1).astype(int)
     # r6.columns = [f"r{i}" for i in range(10)]
     # horizontally stack all the dataframes to N*60 matrix
     # print(r1.shape, r2.shape, r3.shape, r4.shape, r5.shape)
     res = pd.concat([r1, r2, r3, r4, r5], axis=1, ignore_index=True)
-    # print(res.shape)
-    # res['id'] = l_vid
-    # apply i -> l_vid[i] to all columns
     res = res.applymap(lambda x: l_vid[x] if x >= 0 else -1)
     res.columns = r1.columns.tolist() + r2.columns.tolist() + r3.columns.tolist() + r4.columns.tolist() + r5.columns.tolist()
     res['id'] = l_vid
