@@ -643,7 +643,7 @@ def merge_rank():
     for i in range(5):
         bcount[:, i+1] = borda_count_rewritten(rank_rankit.iloc[:, i*8:i*8+8])
     bcount[:, 6] = borda_count_rewritten(bcount[:, 1:4])
-    bcount[:, 7] = borda_count_rewritten(bcount[:, 0:6])
+    bcount[:, 7] = borda_count_rewritten(rank_rankit.iloc[:, [0, 1, 4, 5, 6, 7, 24, 25, 28, 29, 30, 31, 32, 33, 36, 37, 38, 39]])
     bcount = pd.DataFrame(bcount, columns=['po', 'prob', 'ari', 'geo', 'sp_ari', 'sp_geo', 'sci', 'grand'])
     bcount['vid'] = rank_po['vid']
     bcount.to_csv(os.path.join(tmp, "borda_merge.csv"), index=False)
@@ -734,5 +734,10 @@ def visualize_rank():
 # ari_geo()
 # create_rank()
 # create_rankit()
-# merge_rank()
+merge_rank()
 visualize_rank()
+
+def main():
+    _vn()
+    _ulist_vns()
+    partial_order()
