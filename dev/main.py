@@ -244,7 +244,7 @@ def partial_order():
                 if tv[i, j] >= min_common_vote:
                     f.write(f"{l_vid[i]},{l_vid[j]},{pv[i, j]},{nv[i, j]},{tv[i, j]}\n")
 
-def ag3d():
+def ari_geo():
     vn, N, l_vid, vid2idx = setup_vn()
 
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
@@ -253,7 +253,7 @@ def ag3d():
     # ulist_vns[:, 3] = np.maximum(ulist_vns[:, 3], 1)
     M = ulist_vns.shape[0]
 
-    ag3d = np.zeros((N, N, 6), dtype=np.float32)
+    ag3d = np.zeros((N, N, 8), dtype=np.float32)
 
     uids, idx_start = np.unique(ulist_vns[:, 0], return_index=True)
     idx_end = np.r_[idx_start[1:], M]
@@ -265,32 +265,37 @@ def ag3d():
             continue
         indices = arr[:, 1].astype(int)
         votes = arr[:, 2]
-        norms = arr[:, 3]
+        sample_percentile = arr[:, 3]
         idx_i, idx_j = np.triu_indices(n, k=1)
         v1, v2 = indices[idx_i], indices[idx_j]
         ag3d[v1, v2, 0] += votes[idx_i]
         ag3d[v1, v2, 1] += votes[idx_j]
         ag3d[v1, v2, 2] += np.log10(votes[idx_i])
         ag3d[v1, v2, 3] += np.log10(votes[idx_j])
-        ag3d[v1, v2, 4] += norms[idx_i]
-        ag3d[v1, v2, 5] += norms[idx_j]
+        ag3d[v1, v2, 4] += sample_percentile[idx_i]
+        ag3d[v1, v2, 5] += sample_percentile[idx_j]
+        ag3d[v1, v2, 6] += np.log10(sample_percentile[idx_i])
+        ag3d[v1, v2, 7] += np.log10(sample_percentile[idx_j])
 
     partial_order = pd.read_csv(os.path.join(tmp, "partial_order.csv"))
 
     idx0 = partial_order.iloc[:, 0].map(vid2idx).to_numpy().astype(int)
     idx1 = partial_order.iloc[:, 1].map(vid2idx).to_numpy().astype(int)
     ag2d = ag3d[idx0, idx1]  # (n, 8)
-    ag2d = pd.DataFrame(ag2d, columns=['ariX', 'ariY', 'geoX', 'geoY', 'sp_ariX', 'sp_ariY'])
+    ag2d = pd.DataFrame(ag2d, columns=['ariX', 'ariY', 'geoX', 'geoY', 'sp_ariX', 'sp_ariY', 'sp_geoX', 'sp_geoY'])
 
     tv = partial_order['tv'].to_numpy()
-    ag2d.iloc[:, 0] /= tv
-    ag2d.iloc[:, 1] /= tv
-    ag2d.iloc[:, 2] = np.power(ag2d.iloc[:, 2] / tv - 1, 10) # max = 100 -> 10
-    ag2d.iloc[:, 3] = np.power(ag2d.iloc[:, 3] / tv - 1, 10)
-    ag2d.iloc[:, 4] /= tv
-    ag2d.iloc[:, 5] /= tv
+    # vote is 100-scaled, sp is 10000-scaled. convert to a unified scale
+    ag2d.iloc[:, 0] = ag2d.iloc[:, 0] / tv / 100
+    ag2d.iloc[:, 1] = ag2d.iloc[:, 1] / tv / 100
+    ag2d.iloc[:, 2] = np.power(10, ag2d.iloc[:, 2] / tv - 2)
+    ag2d.iloc[:, 3] = np.power(10, ag2d.iloc[:, 3] / tv - 2)
+    ag2d.iloc[:, 4] = ag2d.iloc[:, 4] / tv / 10000
+    ag2d.iloc[:, 5] = ag2d.iloc[:, 5] / tv / 10000
+    ag2d.iloc[:, 6] = np.power(10, ag2d.iloc[:, 6] / tv - 4)
+    ag2d.iloc[:, 7] = np.power(10, ag2d.iloc[:, 7] / tv - 4)
 
-    ag2d.to_csv(os.path.join(tmp, "ag3d.csv"), index=False)
+    ag2d.to_csv(os.path.join(tmp, "ari_geo.csv"), index=False, float_format='%.6f')
 
 def upload_ulist(offset=0):
     ulist_vns = pd.read_csv(os.path.join(tmp, "ulist_vns_min.csv"))
@@ -431,6 +436,18 @@ def partial_order_entropy(data, N):
     scores[:, 1] -= np.bincount(data[:, 1].astype(int), weights=ent, minlength=N)
     return scores[:, 0] / (scores[:, 1] + 1e-10)
 
+def partial_order_spectral(data, N):
+    W = np.zeros((N, N))
+    for row in data:
+        i, j, pv, nv, tv = row
+        W[i, j] += pv / tv
+        W[j, i] += nv / tv
+    D = np.diag(W.sum(axis=1))
+    L = D - W
+    eigvals, eigvecs = np.linalg.eigh(L)
+    fiedler = eigvecs[:, 1]
+    return fiedler
+
 def rankit_wrapper(data, ranker='massey'):
     from rankit.Table import Table
     from rankit.Ranker import MasseyRanker, ColleyRanker, KeenerRanker, MarkovRanker, ODRanker, DifferenceRanker, EloRanker
@@ -481,7 +498,7 @@ def setup_po(lim=None):
     # pandas.map + to_numpy: 2.5s
     po.iloc[:, 0] = po.iloc[:, 0].map(vid2idx)
     po.iloc[:, 1] = po.iloc[:, 1].map(vid2idx)
-    # po = po.to_numpy()
+    po = po.to_numpy()
 
     if lim is not None:
         '''
@@ -500,17 +517,34 @@ def setup_po(lim=None):
         rankit.Colley: 15s (sys 68s)
         rankit.Keener, rankit.Markov, rankit.OD, rankit.Difference: 4s
         '''
-        # po = po[(po[:, 0] < lim) & (po[:, 1] < lim)]
-        po = po[(po.iloc[:, 0] < lim) & (po.iloc[:, 1] < lim)]
-        po = po.rename(columns={po.columns[0]: 'host', po.columns[1]: 'visit', po.columns[2]: 'hscore', po.columns[3]: 'vscore'})
-        po = po[['host', 'visit', 'hscore', 'vscore']]
+        po = po[(po[:, 0] < lim) & (po[:, 1] < lim)]
+        # po = po[(po.iloc[:, 0] < lim) & (po.iloc[:, 1] < lim)]
+        # po = po.rename(columns={po.columns[0]: 'host', po.columns[1]: 'visit', po.columns[2]: 'hscore', po.columns[3]: 'vscore'})
+        # po = po[['host', 'visit', 'hscore', 'vscore']]
         N = lim
+        partial_order_spectral(po, N)
     else:
         return vn, N, l_vid, vid2idx, po
+
+def create_rank():
+    vn, N, l_vid, vid2idx = setup_vn()
+    po = pd.read_csv(os.path.join(tmp, "partial_order.csv")) # i,j,pv,nv,tv
+    po.iloc[:, 0] = po.iloc[:, 0].map(vid2idx)
+    po.iloc[:, 1] = po.iloc[:, 1].map(vid2idx)
+    po = po.to_numpy()
+
+    scores = pd.DataFrame()
+    scores['idx'] = np.arange(N)
+    scores['vid'] = l_vid
+    _classical = partial_order_classical(po, N)
+    _random_walk = partial_order_random_walk(po, N)
+    _elo = partial_order_elo_v2(po, N)
+    _entropy = partial_order_entropy(po, N)
 
 # _vn()
 # _ulist_vns()
 # partial_order()
 # upload_ulist()
-ag3d()
-# setup_po()
+# ari_geo()
+setup_po(2000)
+# create_rank()
