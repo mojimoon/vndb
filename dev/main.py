@@ -107,6 +107,9 @@ def _vn():
     vn = vn[vn['c_votecount'] >= min_vote]
     vn['id'] = vn['id'].str[1:].astype(int)
     vn = vn[['id', 'olang', 'c_votecount', 'c_rating', 'c_average', 'length', 'alias']]
+    vn = vn.sort_values(by=['c_rating', 'c_average'], ascending=[False, False])
+    vn['rank'] = np.arange(1, vn.shape[0] + 1)
+    vn.reset_index(drop=True, inplace=True)
     vn.to_csv(os.path.join(tmp, "vn_min.csv"), index=False)
 
 def _ulist_vns():
@@ -645,6 +648,64 @@ def merge_rank():
     bcount['vid'] = rank_po['vid']
     bcount.to_csv(os.path.join(tmp, "borda_merge.csv"), index=False)
 
+def compute_kendall_matrix(ratings):
+    from scipy.stats import kendalltau
+    methods = ratings.columns
+    n = len(methods)
+    kendall = np.zeros((n, n))
+    idx_i, idx_j = np.tril_indices(n, k=-1)
+    for i, j in zip(idx_i, idx_j):
+        kendall[i, j] = kendalltau(ratings.iloc[:, i], ratings.iloc[:, j])[0]
+    return pd.DataFrame(kendall, index=methods, columns=methods)
+
+def render_value(val):
+    val = round(val * 100)
+    if val >= 0:
+        return f".{val:02d}"
+    else:
+        return f"-.{-val:02d}"
+
+def visualize_rank():
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    vn = pd.read_csv(os.path.join(tmp, "vn_min.csv"))
+    vn.sort_values(by=['id'], inplace=True)
+    vn.reset_index(drop=True, inplace=True)
+    N = vn.shape[0]
+    vndb = N - vn['rank']
+    rank_po = pd.read_csv(os.path.join(tmp, "rank_po.csv"))
+    rank_rankit = pd.read_csv(os.path.join(tmp, "rank_rankit.csv"))
+    borda_merge = pd.read_csv(os.path.join(tmp, "borda_merge.csv"))
+
+    ratings = pd.DataFrame()
+    ratings['vndb'] = vndb # 0
+    ratings[rank_po.columns[:-1]] = rank_po.iloc[:, :-1] # 1-8 (8)
+    ratings[rank_rankit.columns[:-1]] = rank_rankit.iloc[:, :-1] # 9-48 (40)
+    ratings[borda_merge.columns[:-1]] = borda_merge.iloc[:, :-1] # 49-56 (8)
+
+    ratings = (ratings - ratings.min()) / (ratings.max() - ratings.min())
+    kendall = compute_kendall_matrix(ratings)
+    M = kendall.shape[0]
+    mask = np.zeros_like(kendall, dtype=bool)
+    mask[np.triu_indices_from(mask)] = True
+
+    fig, ax = plt.subplots(figsize=(20, 20))
+    annot = kendall.applymap(render_value)
+    sns.heatmap(kendall, mask=mask, annot=annot, fmt="", cmap="YlGnBu",
+                cbar_kws={"shrink": .8}, linewidth=0.5, annot_kws={"size": 11}, ax=ax)
+
+    for i in range(1, 7):
+        idx = i * 8 + 1
+        ax.plot([0, idx], [idx, idx], color='black', lw=1.5, clip_on=False)
+        ax.plot([idx, idx], [idx, M], color='black', lw=1.5, clip_on=False)
+
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+
+    plt.title("Kendall's Tau Correlation Coefficient over All Methods")
+    plt.tight_layout()
+    plt.savefig(os.path.join(root, "assets", "kendall_heatmap.png"))
+
 # _vn()
 # _ulist_vns()
 # partial_order()
@@ -652,4 +713,5 @@ def merge_rank():
 # ari_geo()
 # create_rank()
 # create_rankit()
-merge_rank()
+# merge_rank()
+visualize_rank()
