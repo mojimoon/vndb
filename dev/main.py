@@ -771,7 +771,8 @@ def handle_vn_info():
         if zh_q and not pd.isna(vn['title_en'][i]):
             vn.loc[i, 'title_zh'] = vn['title_en'][i]
     
-    vn[['title_ja', 'title_zh', 'title_en']] = vn[['title_ja', 'title_zh', 'title_en']].fillna('')
+    vn.loc[:, ['title_ja', 'title_zh', 'title_en', 'alias']] = vn.loc[:, ['title_ja', 'title_zh', 'title_en', 'alias']].replace('\\N', np.nan, inplace=True)
+    vn.loc[:, ['title_ja', 'title_zh', 'title_en', 'alias']] = vn.loc[:, ['title_ja', 'title_zh', 'title_en', 'alias']].fillna('', inplace=True)
     vn['search'] = vn['title_ja'].astype(str) + vn['title_zh'].astype(str) + vn['title_en'].astype(str) + vn['alias'].astype(str)
     vn['search'] = vn['search'].apply(purify)
 
@@ -802,9 +803,33 @@ def handle_vn_info():
             return group.iloc[0]['pid']
     rp = releases_producers.groupby('id', sort=False).apply(get_first_producer)
     vn['pid'] = vn['rid'].map(rp)
-    # vn['pid'] = vn['pid'].str[1:].astype(int)
+    vn['pid'].fillna('p0', inplace=True)
+    vn['pid'] = vn['pid'].str[1:].astype(int)
+    vn.drop(columns=['rid'], inplace=True)
 
     vn.to_csv(os.path.join(tmp, "vn_min.csv"), index=False)
+
+def handle_relations():
+    vn = pd.read_csv(os.path.join(tmp, "vn_min.csv"))
+    vn_relations = load("vn_relations") # id	vid	relation	official
+    vids = vn['id']
+    vn_relations['vid'] = vn_relations['vid'].str[1:].astype(int)
+    vn_relations['id'] = vn_relations['id'].str[1:].astype(int)
+    vn_relations = vn_relations[(vn_relations['vid'].isin(vids)) & (vn_relations['id'].isin(vids)) & (vn_relations['official'] == 't')]
+    vn_relations.drop(columns=['official'], inplace=True)
+    vn_relations.rename(columns={'id': 'id0', 'vid': 'id1'}, inplace=True)
+    vn_relations.to_csv(os.path.join(tmp, "vn_relations_min.csv"), index=False)
+
+def handle_producer():
+    vn = pd.read_csv(os.path.join(tmp, "vn_min.csv"))
+    producers = load("producers") # id	type	lang	name	latin	alias	description
+    producers['id'] = producers['id'].str[1:].astype(int)
+    producers['latin'] = producers['latin'].str.replace('\\N', '', regex=False)
+    producers['alias'] = producers['alias'].fillna('')
+    producers['search'] = producers['name'].astype(str) + producers['latin'].astype(str) + producers['alias'].astype(str)
+    producers['search'] = producers['search'].apply(purify)
+    producers = producers[['id', 'name', 'latin', 'search']]
+    producers.to_csv(os.path.join(tmp, "producers_min.csv"), index=False)
 
 # _vn()
 # _ulist_vns()
@@ -815,4 +840,6 @@ def handle_vn_info():
 # create_rankit()
 # merge_rank()
 # visualize_rank()
-handle_vn_info()
+# handle_vn_info()
+# handle_relations()
+# handle_producer()
