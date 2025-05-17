@@ -660,10 +660,16 @@ def compute_kendall_matrix(ratings):
 
 def render_value(val):
     val = round(val * 100)
-    if val >= 0:
+    if val == 100:
+        return "1"
+    elif val > 0:
         return f".{val:02d}"
-    else:
+    elif val == 0:
+        return "0"
+    elif val < 0:
         return f"-.{-val:02d}"
+    else:
+        return "-1"
 
 def visualize_rank():
     import seaborn as sns
@@ -678,10 +684,10 @@ def visualize_rank():
     borda_merge = pd.read_csv(os.path.join(tmp, "borda_merge.csv"))
 
     ratings = pd.DataFrame()
+    ratings[rank_po.columns[:-1]] = rank_po.iloc[:, :-1] # 8
+    ratings[rank_rankit.columns[:-1]] = rank_rankit.iloc[:, :-1] # 40
+    ratings[borda_merge.columns[:-1]] = borda_merge.iloc[:, :-1] # 8
     ratings['vndb'] = vndb # 0
-    ratings[rank_po.columns[:-1]] = rank_po.iloc[:, :-1] # 1-8 (8)
-    ratings[rank_rankit.columns[:-1]] = rank_rankit.iloc[:, :-1] # 9-48 (40)
-    ratings[borda_merge.columns[:-1]] = borda_merge.iloc[:, :-1] # 49-56 (8)
 
     ratings = (ratings - ratings.min()) / (ratings.max() - ratings.min())
     kendall = compute_kendall_matrix(ratings)
@@ -695,7 +701,7 @@ def visualize_rank():
                 cbar_kws={"shrink": .8}, linewidth=0.5, annot_kws={"size": 11}, ax=ax)
 
     for i in range(1, 7):
-        idx = i * 8 + 1
+        idx = i * 8
         ax.plot([0, idx], [idx, idx], color='black', lw=1.5, clip_on=False)
         ax.plot([idx, idx], [idx, M], color='black', lw=1.5, clip_on=False)
 
@@ -705,6 +711,21 @@ def visualize_rank():
     plt.title("Kendall's Tau Correlation Coefficient over All Methods")
     plt.tight_layout()
     plt.savefig(os.path.join(root, "assets", "kendall_heatmap.png"))
+
+    # [0:8] + [32:40] + [48:]
+    my_ratings = ratings.iloc[:, [0, 1, 2, 3, 4, 5, 6, 7, 32, 33, 34, 35, 36, 37, 38, 39, 48, 49, 50, 51, 52, 53, 54, 55, 56]]
+    _kendall = compute_kendall_matrix(my_ratings)
+    _M = _kendall.shape[0]
+    _mask = np.zeros_like(_kendall, dtype=bool)
+    _mask[np.triu_indices_from(_mask)] = True
+    fig, ax = plt.subplots(figsize=(12, 10))
+    sns.heatmap(_kendall, mask=_mask, annot=True, fmt=".2f", cmap="YlGnBu",
+                cbar_kws={"shrink": .8}, linewidth=0.5, ax=ax)
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    plt.title("Kendall's Tau Correlation Coefficient over Selected Methods")
+    plt.tight_layout()
+    plt.savefig(os.path.join(root, "assets", "kendall_heatmap_selected.png"))
 
 # _vn()
 # _ulist_vns()
