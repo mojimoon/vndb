@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
 import re
+import csv
 
 pwd = os.path.dirname(os.path.abspath(__file__))
 root = os.path.dirname(pwd)
@@ -16,14 +17,17 @@ SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 if not os.path.exists(dump):
     raise FileNotFoundError(f"Database directory {dump} does not exist")
 
-def load(table):
+def load(table, dirty_quote=False):
     path = os.path.join(dump, "db", table)
     header_path = os.path.join(dump, "db", f"{table}.header")
     if not os.path.exists(path) or not os.path.exists(header_path):
         raise FileNotFoundError(f"Data file {path} or header file {header_path} does not exist")
     with open(header_path, "r") as f:
         header = f.read().strip().split("\t")
-    df = pd.read_csv(path, sep="\t", header=None, names=header)
+    if dirty_quote:
+        df = pd.read_csv(path, sep="\t", header=None, names=header, quoting=csv.QUOTE_NONE)
+    else:
+        df = pd.read_csv(path, sep="\t", header=None, names=header)
     return df
 
 def connect():
@@ -122,14 +126,14 @@ def _vn():
 def _ulist_vns():
     vn = pd.read_csv(os.path.join(tmp, "vn_min.csv"))
     ids = vn['id'].tolist()
-    ulist_vns = load("ulist_vns") # uid	vid	added	lastmod	vote_date	started	finished	vote	notes	labels
+    ulist_vns = load("ulist_vns", dirty_quote=True) # uid	vid	added	lastmod	vote_date	started	finished	vote	notes	labels
     ulist_vns['vid'] = ulist_vns['vid'].str[1:].astype(int)
     ulist_vns = ulist_vns[(ulist_vns['vid'].isin(ids)) & (ulist_vns['vote'] != '\\N')]
     ulist_vns['uid'] = ulist_vns['uid'].str[1:].astype(int)
     ulist_vns['vote'] = ulist_vns['vote'].astype(int)
-    # ulist_vns['vote10'] = (ulist_vns['vote'] + 5) // 10
     ulist_vns['state'] = ulist_vns['labels'].apply(parse_min)
     ulist_vns = ulist_vns[['uid', 'vid', 'lastmod', 'vote', 'notes', 'state']]
+    # describe(ulist_vns, "ulist_vns")
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
 
 def setup_vn():
@@ -933,7 +937,7 @@ def general_statistics():
     genstat.to_csv(os.path.join(tmp, "genstat.csv"), index=False, float_format='%.3f')
 
 # _vn()
-# _ulist_vns()
+_ulist_vns()
 # partial_order()
 # upload_ulist()
 # ari_geo()
@@ -945,4 +949,4 @@ def general_statistics():
 # handle_relations()
 # handle_producer()
 # generate_comparable()
-general_statistics()
+# general_statistics()
