@@ -23,9 +23,10 @@ def preprocess_data(df):
     df['clean_notes'], df['word_count'] = zip(*df['notes'].apply(clean_text))
     df = df[df['word_count'] >= 5].reset_index(drop=True)
 
-    df['class'] = pd.cut(df['vote'], bins=[10, 40, 70, 100], labels=[0, 1, 2])
-    # [10, 40) -> 0, [40, 70) -> 1, [70, 100] -> 2
+    df['class'] = pd.cut(df['vote'], bins=[0, 40, 70, 100], labels=[0, 1, 2])
+    # [0, 40) -> 0, (40, 70) -> 1, (70, 100] -> 2
     df = df[['clean_notes', 'class', 'vote']]
+    # df.to_csv("tmp/ulist_vns_full_cleaned.csv", index=False)
     train_df, val_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df['class'])
     return train_df, val_df
 
@@ -55,13 +56,19 @@ class VndbDataset(Dataset):
         item['labels'] = torch.tensor(self.labels[idx])
         return item
 
-def create_datasets(df):
-    tokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
+def create_datasets(df, use_cached=True):
+    cached = use_cached and os.path.exists(os.path.join(MODEL_SAVE_PATH, 'tokenizer_config.json'))
+    if cached:
+        print("Tokenizer already exists, loading from", MODEL_SAVE_PATH)
+        tokenizer = DistilBertTokenizerFast.from_pretrained(MODEL_SAVE_PATH)
+    else:
+        tokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
     train_df, val_df = preprocess_data(df)
     train_dataset = VndbDataset(train_df, tokenizer, label_mode='class')
     val_dataset = VndbDataset(val_df, tokenizer, label_mode='class')
-    tokenizer.save_pretrained(MODEL_SAVE_PATH)
-    print("Tokenizer saved to:", MODEL_SAVE_PATH)
+    if not cached:
+        tokenizer.save_pretrained(MODEL_SAVE_PATH)
+        print("Tokenizer saved to:", MODEL_SAVE_PATH)
     return train_dataset, val_dataset
 
 def compute_metrics(pred):
@@ -78,6 +85,7 @@ training_args = TrainingArguments(
     per_device_eval_batch_size=32,
     warmup_steps=100,
     evaluation_strategy="epoch",
+    save_strategy="epoch",
     logging_dir='./logs',
     save_total_limit=2,
     load_best_model_at_end=True,

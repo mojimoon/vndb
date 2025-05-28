@@ -11,3 +11,7 @@ dev/archive/*.csv
 
 # environment
 dev/.env
+
+# models and checkpoints
+dev/models/
+dev/results/
