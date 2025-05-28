@@ -108,6 +108,15 @@ def train_model(train_dataset, val_dataset):
     print("Model saved to:", MODEL_SAVE_PATH)
     return trainer
 
+def load_model():
+    if os.path.exists(os.path.join(MODEL_SAVE_PATH, 'model.safetensors')) or os.path.exists(os.path.join(MODEL_SAVE_PATH, 'pytorch_model.bin')):
+        model = DistilBertForSequenceClassification.from_pretrained(MODEL_SAVE_PATH)
+        tokenizer = DistilBertTokenizerFast.from_pretrained(MODEL_SAVE_PATH)
+        print("Model and tokenizer loaded from:", MODEL_SAVE_PATH)
+        return model, tokenizer
+    else:
+        raise FileNotFoundError(f"Model not found at {MODEL_SAVE_PATH}")
+
 def evaluate_model(trainer, val_dataset):
     eval_results = trainer.evaluate(eval_dataset=val_dataset)
     print("Evaluation results:", eval_results)
