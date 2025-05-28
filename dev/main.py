@@ -136,6 +136,16 @@ def _ulist_vns():
     # describe(ulist_vns, "ulist_vns")
     ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_min.csv"), index=False)
 
+def _ulist_vns_full():
+    ulist_vns = load("ulist_vns", dirty_quote=True)
+    ulist_vns = ulist_vns[(ulist_vns['vote'] != '\\N') & (ulist_vns['notes'].notna())]
+    ulist_vns['vid'] = ulist_vns['vid'].str[1:].astype(int)
+    ulist_vns['uid'] = ulist_vns['uid'].str[1:].astype(int)
+    ulist_vns['vote'] = ulist_vns['vote'].astype(int)
+    ulist_vns['state'] = ulist_vns['labels'].apply(parse_min)
+    ulist_vns = ulist_vns[['uid', 'vid', 'lastmod', 'vote', 'notes', 'state']]
+    ulist_vns.to_csv(os.path.join(tmp, "ulist_vns_full.csv"), index=False)
+
 def setup_vn():
     vn = pd.read_csv(os.path.join(tmp, "vn_min.csv"))
     N = vn.shape[0]
@@ -937,7 +947,8 @@ def general_statistics():
     genstat.to_csv(os.path.join(tmp, "genstat.csv"), index=False, float_format='%.3f')
 
 # _vn()
-_ulist_vns()
+# _ulist_vns()
+_ulist_vns_full()
 # partial_order()
 # upload_ulist()
 # ari_geo()

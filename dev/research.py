@@ -1,15 +1,7 @@
-import os
-import sys
-import numpy as np
 import pandas as pd
-
-def data_preprocessing():
-    df = pd.read_csv('tmp/ulist_vns_min.csv')
-    df = df[df['notes'].notna()]
-    df = df.rename(columns={'lastmod': 'date', 'sp': 'score'})
-    df = df[['uid', 'vid', 'date', 'notes', 'state', 'score']]
-    # remove rows with only one column (due to incorrect parsing)
-    df = df[df.apply(lambda x: x.count(), axis=1) > 1]
-    df.to_csv('tmp/ulist_vns_minimal.csv', index=False)
-
-data_preprocessing()
+import re
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, mean_squared_error
+from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification, Trainer, TrainingArguments
+import torch
+from torch.utils.data import Dataset
