@@ -7,6 +7,9 @@ import torch
 from torch.utils.data import Dataset
 import os
 import optuna
+import torch.nn as nn
+import numpy as np
+from torch.utils.data import DataLoader
 
 DATA_PATH = 'tmp/ulist_vns_full.csv'
 MODEL_SAVE_PATH = 'models/distilbert-vndb'
@@ -174,6 +177,99 @@ def train_with_hyperparameter_search():
 
     hyperparameter_search(train_dataset, val_dataset)
 
+class TextVocab:
+    def __init__(self, texts, min_freq=2):
+        self.itos = ['<pad>', '<unk>']
+        self.stoi = {t: i for i, t in enumerate(self.itos)}
+        freq = {}
+        for text in texts:
+            for w in text.lower().split():
+                freq[w] = freq.get(w, 0) + 1
+        for word, cnt in freq.items():
+            if cnt >= min_freq:
+                self.stoi.setdefault(word, len(self.itos))
+                self.itos.append(word)
+    def encode(self, text, max_len):
+        tokens = text.lower().split()
+        ids = [self.stoi.get(w, self.stoi['<unk>']) for w in tokens]
+        if len(ids) < max_len:
+            ids += [self.stoi['<pad>']] * (max_len - len(ids))
+        else:
+            ids = ids[:max_len]
+        return ids
+
+class TransformerDataset(Dataset):
+    def __init__(self, df, vocab, max_len=64):
+        self.texts = df['clean_notes'].tolist()
+        self.labels = df['class'].astype(int).tolist()
+        self.vocab = vocab
+        self.max_len = max_len
+    def __len__(self):
+        return len(self.texts)
+    def __getitem__(self, idx):
+        ids = torch.tensor(self.vocab.encode(self.texts[idx], self.max_len))
+        label = torch.tensor(self.labels[idx])
+        return ids, label
+
+class TransformerClassifier(nn.Module):
+    def __init__(self, vocab_size, d_model=128, nhead=4, num_layers=2, num_classes=3, max_len=64, dropout=0.1):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.pos_embedding = nn.Parameter(torch.zeros(1, max_len, d_model))
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=256, dropout=dropout)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.fc = nn.Linear(d_model, num_classes)
+    def forward(self, x):
+        # x: [batch, seq]
+        emb = self.embedding(x) + self.pos_embedding[:, :x.size(1), :]
+        emb = emb.transpose(0, 1)  # [seq, batch, d_model]
+        out = self.transformer(emb)  # [seq, batch, d_model]
+        out = out.mean(dim=0)  # [batch, d_model]
+        logits = self.fc(out)
+        return logits
+
+def train_transformer(train_loader, val_loader, vocab_size, device='cuda'):
+    model = TransformerClassifier(vocab_size=vocab_size).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=2e-4)
+    criterion = nn.CrossEntropyLoss()
+    best_val_acc = 0
+    for epoch in range(8):
+        model.train()
+        for x, y in train_loader:
+            x, y = x.to(device), y.to(device)
+            optimizer.zero_grad()
+            logits = model(x)
+            loss = criterion(logits, y)
+            loss.backward()
+            optimizer.step()
+        model.eval()
+        y_true, y_pred = [], []
+        with torch.no_grad():
+            for x, y in val_loader:
+                x, y = x.to(device), y.to(device)
+                logits = model(x)
+                preds = logits.argmax(-1).cpu().numpy()
+                y_pred.extend(preds)
+                y_true.extend(y.cpu().numpy())
+        acc = np.mean(np.array(y_pred) == np.array(y_true))
+        print(f"Epoch {epoch+1} val acc: {acc:.4f}")
+        if acc > best_val_acc:
+            best_val_acc = acc
+            torch.save(model.state_dict(), 'models/transformer-baseline.pt')
+    print(classification_report(y_true, y_pred))
+    return model
+
+def train_and_evaluate_transformer():
+    DATA_PATH = 'tmp/ulist_vns_full.csv'
+    df = pd.read_csv(DATA_PATH)
+    train_df, val_df = preprocess_data(df)
+    vocab = TextVocab(train_df['clean_notes'].tolist() + val_df['clean_notes'].tolist())
+    train_dataset = TransformerDataset(train_df, vocab)
+    val_dataset = TransformerDataset(val_df, vocab)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=64)
+    model = train_transformer(train_loader, val_loader, vocab_size=len(vocab.itos))
+
 if __name__ == "__main__":
-    train_with_hyperparameter_search()
+    train_and_evaluate_transformer()
 
