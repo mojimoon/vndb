@@ -6,6 +6,7 @@ from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassific
 import torch
 from torch.utils.data import Dataset
 import os
+import optuna
 
 DATA_PATH = 'tmp/ulist_vns_full.csv'
 MODEL_SAVE_PATH = 'models/distilbert-vndb'
@@ -96,6 +97,46 @@ def train_model(train_dataset, val_dataset):
     print("Model saved to:", MODEL_SAVE_PATH)
     return model
 
+def model_init():
+    return DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=3)
+
+def hp_space(trial):
+    return {
+        "learning_rate": trial.suggest_loguniform("learning_rate", 1e-5, 1e-3),
+        "per_device_train_batch_size": trial.suggest_categorical("per_device_train_batch_size", [8, 16, 32]),
+        "num_train_epochs": trial.suggest_int("num_train_epochs", 2, 5),
+        "warmup_steps": trial.suggest_categorical("warmup_steps", [50, 100, 200, 300]),
+    }
+
+def hyperparameter_search(train_dataset, val_dataset):
+    trainer = Trainer(
+        model_init=model_init,
+        args=TrainingArguments(
+            output_dir="./checkpoints",
+            evaluation_strategy="steps",
+            eval_steps=500,
+            logging_dir="./logs",
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
+        ),
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=lambda p: {
+            'eval_accuracy': (p.predictions.argmax(-1) == p.label_ids).mean(),
+            'eval_f1': classification_report(p.label_ids, p.predictions.argmax(-1), output_dict=True)['weighted avg']['f1-score']
+        }
+    )
+
+    best_run = trainer.hyperparameter_search(
+        direction="maximize",
+        hp_space=hp_space,
+        n_trials=20,
+        backend="optuna",
+        compute_objective=lambda metrics: metrics["eval_f1"]
+    )
+
+    print("Best run:", best_run)
+
 def load_model():
     if os.path.exists(MODEL_SAVE_PATH):
         model = DistilBertForSequenceClassification.from_pretrained(MODEL_SAVE_PATH)
@@ -119,7 +160,7 @@ def evaluate_model(model, val_dataset):
     
     return report, mse
 
-def main():
+def train_and_evaluate():
     df = pd.read_csv(DATA_PATH)
     train_dataset, val_dataset = create_datasets(df)
 
@@ -127,6 +168,12 @@ def main():
 
     evaluate_model(model, val_dataset)
 
+def train_with_hyperparameter_search():
+    df = pd.read_csv(DATA_PATH)
+    train_dataset, val_dataset = create_datasets(df)
+
+    hyperparameter_search(train_dataset, val_dataset)
+
 if __name__ == "__main__":
-    main()
+    train_with_hyperparameter_search()
 

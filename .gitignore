@@ -14,4 +14,6 @@ dev/.env
 
 # models and checkpoints
 dev/models/
-dev/results/
+dev/checkpoints/
+
+dev/logs/
