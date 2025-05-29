@@ -1,0 +1,132 @@
+import pandas as pd
+import re
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, mean_squared_error
+from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification, Trainer, TrainingArguments
+import torch
+from torch.utils.data import Dataset
+import os
+
+DATA_PATH = 'tmp/ulist_vns_full.csv'
+MODEL_SAVE_PATH = 'models/distilbert-vndb'
+
+def clean_text(text):
+    cleaned = re.sub(r"[^A-Za-z0-9.,!?;:'\"()\- ]+", " ", str(text))
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    words = re.findall(r'\b[a-zA-Z]+\b', cleaned)
+    return cleaned, len(words)
+
+def preprocess_data(df):
+    df['clean_notes'], df['word_count'] = zip(*df['notes'].apply(clean_text))
+    df = df[df['word_count'] >= 5].reset_index(drop=True)
+
+    df['class'] = pd.cut(df['vote'], bins=[0, 40, 70, 100], labels=[0, 1, 2])
+    # [0, 40] = 0, [41, 70] = 1, [71, 100] = 2
+    df = df[['clean_notes', 'class', 'vote']]
+    # drop duplicates
+    df = df.drop_duplicates(subset=['clean_notes']).reset_index(drop=True)
+    train_df, val_df = train_test_split(df, test_size=0.2, random_state=4294967295, stratify=df['class'])
+    return train_df, val_df
+
+class VndbDataset(Dataset):
+    def __init__(self, df, tokenizer, label_mode='class', max_length=256):
+        self.texts = df['clean_notes'].tolist()
+        self.label_mode = label_mode
+        if label_mode == 'class':
+            self.labels = df['class'].astype(int).tolist()
+        else:
+            self.labels = df['vote'].astype(float).tolist()
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        encoding = self.tokenizer(
+            self.texts[idx],
+            truncation=True,
+            padding='max_length',
+            max_length=self.max_length,
+            return_tensors='pt'
+        )
+        item = {key: val.squeeze(0) for key, val in encoding.items()}
+        item['labels'] = torch.tensor(self.labels[idx])
+        return item
+
+def create_datasets(df):
+    tokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
+    train_df, val_df = preprocess_data(df)
+    
+    train_dataset = VndbDataset(train_df, tokenizer, label_mode='class')
+    val_dataset = VndbDataset(val_df, tokenizer, label_mode='class')
+    
+    return train_dataset, val_dataset
+
+training_args = TrainingArguments(
+    output_dir='./checkpoints',
+    num_train_epochs=3,
+    per_device_train_batch_size=16,
+    per_device_eval_batch_size=32,
+    warmup_steps=100,
+    evaluation_strategy="steps",
+    eval_steps=500,
+    logging_dir='./logs',
+    save_total_limit=2,
+    load_best_model_at_end=True,
+    metric_for_best_model='eval_loss',
+)
+
+def train_model(train_dataset, val_dataset):
+    model = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=3)
+    
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=lambda p: {
+            'accuracy': (p.predictions.argmax(-1) == p.label_ids).mean(),
+            'f1': classification_report(p.label_ids, p.predictions.argmax(-1), output_dict=True)['weighted avg']['f1-score']
+        }
+    )
+    
+    trainer.train()
+    model.save_pretrained(MODEL_SAVE_PATH)
+    print("Model saved to:", MODEL_SAVE_PATH)
+    return model
+
+def load_model():
+    if os.path.exists(MODEL_SAVE_PATH):
+        model = DistilBertForSequenceClassification.from_pretrained(MODEL_SAVE_PATH)
+        return model
+    else:
+        raise FileNotFoundError(f"Model not found at {MODEL_SAVE_PATH}")
+
+def evaluate_model(model, val_dataset):
+    trainer = Trainer(model=model)
+    eval_results = trainer.evaluate(eval_dataset=val_dataset)
+    print("Evaluation results:", eval_results)
+    
+    predictions, labels, _ = trainer.predict(val_dataset)
+    preds = predictions.argmax(-1)
+    
+    report = classification_report(labels, preds, output_dict=True)
+    print("Classification Report:\n", report)
+    
+    mse = mean_squared_error(labels, preds)
+    print("Mean Squared Error:", mse)
+    
+    return report, mse
+
+def main():
+    df = pd.read_csv(DATA_PATH)
+    train_dataset, val_dataset = create_datasets(df)
+
+    model = train_model(train_dataset, val_dataset)
+
+    evaluate_model(model, val_dataset)
+
+if __name__ == "__main__":
+    main()
+
