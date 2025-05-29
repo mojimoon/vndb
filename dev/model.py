@@ -14,6 +14,8 @@ from torch.utils.data import DataLoader
 DATA_PATH = 'tmp/ulist_vns_full.csv'
 MODEL_SAVE_PATH = 'models/distilbert-vndb'
 
+# Begin DistilBERT
+
 def clean_text(text):
     cleaned = re.sub(r"[^A-Za-z0-9.,!?;:'\"()\- ]+", " ", str(text))
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
@@ -29,7 +31,7 @@ def preprocess_data(df):
     df = df[['clean_notes', 'class', 'vote']]
     # drop duplicates
     df = df.drop_duplicates(subset=['clean_notes']).reset_index(drop=True)
-    train_df, val_df = train_test_split(df, test_size=0.2, random_state=4294967295, stratify=df['class'])
+    train_df, val_df = train_test_split(df, test_size=0.2, random_state=42949, stratify=df['class'])
     return train_df, val_df
 
 class VndbDataset(Dataset):
@@ -100,9 +102,6 @@ def train_model(train_dataset, val_dataset):
     print("Model saved to:", MODEL_SAVE_PATH)
     return model
 
-def model_init():
-    return DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=3)
-
 def hp_space(trial):
     return {
         "learning_rate": trial.suggest_loguniform("learning_rate", 1e-5, 1e-3),
@@ -113,7 +112,7 @@ def hp_space(trial):
 
 def hyperparameter_search(train_dataset, val_dataset):
     trainer = Trainer(
-        model_init=model_init,
+        model_init=lambda: DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=3),
         args=TrainingArguments(
             output_dir="./checkpoints",
             evaluation_strategy="steps",
@@ -163,19 +162,36 @@ def evaluate_model(model, val_dataset):
     
     return report, mse
 
-def train_and_evaluate():
-    df = pd.read_csv(DATA_PATH)
-    train_dataset, val_dataset = create_datasets(df)
+# Begin Transformer
 
-    model = train_model(train_dataset, val_dataset)
+def download_nltk_resources():
+    import nltk
+    nltk.download('stopwords')
+    nltk.download('wordnet')
 
-    evaluate_model(model, val_dataset)
+def clean_text_transformer(text):
+    from nltk.corpus import stopwords
+    from nltk.stem import WordNetLemmatizer
+    stop_words = set(stopwords.words('english'))
+    lemmatizer = WordNetLemmatizer()
 
-def train_with_hyperparameter_search():
-    df = pd.read_csv(DATA_PATH)
-    train_dataset, val_dataset = create_datasets(df)
+    cleaned = re.sub(r"[^A-Za-z0-9.,!?;:'\"()\- ]+", " ", str(text))
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip().lower()
+    tokens = cleaned.split()
+    tokens = [w for w in tokens if w not in stop_words]
+    tokens = [lemmatizer.lemmatize(w) for w in tokens]
+    return ' '.join(tokens), len(tokens)
 
-    hyperparameter_search(train_dataset, val_dataset)
+def preprocess_data_transformer(df):
+    df['clean_notes'], df['word_count'] = zip(*df['notes'].apply(clean_text_transformer))
+    df = df[df['word_count'] >= 5].reset_index(drop=True)
+
+    df['class'] = pd.cut(df['vote'], bins=[0, 40, 70, 100], labels=[0, 1, 2])
+    df = df[['clean_notes', 'class', 'vote']]
+    # drop duplicates
+    df = df.drop_duplicates(subset=['clean_notes']).reset_index(drop=True)
+    train_df, val_df = train_test_split(df, test_size=0.2, random_state=42949, stratify=df['class'])
+    return train_df, val_df
 
 class TextVocab:
     def __init__(self, texts, min_freq=2):
@@ -259,10 +275,25 @@ def train_transformer(train_loader, val_loader, vocab_size, device='cuda'):
     print(classification_report(y_true, y_pred))
     return model
 
-def train_and_evaluate_transformer():
-    DATA_PATH = 'tmp/ulist_vns_full.csv'
+# Begin main functions
+
+def train_and_evaluate():
     df = pd.read_csv(DATA_PATH)
-    train_df, val_df = preprocess_data(df)
+    train_dataset, val_dataset = create_datasets(df)
+
+    model = train_model(train_dataset, val_dataset)
+
+    evaluate_model(model, val_dataset)
+
+def train_with_hyperparameter_search():
+    df = pd.read_csv(DATA_PATH)
+    train_dataset, val_dataset = create_datasets(df)
+
+    hyperparameter_search(train_dataset, val_dataset)
+
+def train_and_evaluate_transformer():
+    df = pd.read_csv(DATA_PATH)
+    train_df, val_df = preprocess_data_transformer(df)
     vocab = TextVocab(train_df['clean_notes'].tolist() + val_df['clean_notes'].tolist())
     train_dataset = TransformerDataset(train_df, vocab)
     val_dataset = TransformerDataset(val_df, vocab)
@@ -271,5 +302,6 @@ def train_and_evaluate_transformer():
     model = train_transformer(train_loader, val_loader, vocab_size=len(vocab.itos))
 
 if __name__ == "__main__":
+    download_nltk_resources()
     train_and_evaluate_transformer()
 
