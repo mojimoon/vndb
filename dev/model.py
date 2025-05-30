@@ -1,18 +1,22 @@
-import pandas as pd
+import os
 import re
+import csv
+import numpy as np
+import pandas as pd
+
+import torch
+import optuna
+import torch.nn as nn
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, mean_squared_error
 from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification, Trainer, TrainingArguments
-import torch
-from torch.utils.data import Dataset
-import os
-import optuna
-import torch.nn as nn
-import numpy as np
-from torch.utils.data import DataLoader
 
 DATA_PATH = 'tmp/ulist_vns_full.csv'
 MODEL_SAVE_PATH = 'models/distilbert-vndb'
+# MODEL_SAVE_PATH = 'models/distilbert-vndb-2'
+REPORT_PATH = 'logs/hyperparameter_report.csv'
 
 # Begin DistilBERT
 
@@ -28,6 +32,7 @@ def preprocess_data(df):
 
     df['class'] = pd.cut(df['vote'], bins=[0, 40, 70, 100], labels=[0, 1, 2])
     # [0, 40] = 0, [41, 70] = 1, [71, 100] = 2
+    # df['class'] = pd.cut(df['vote'], bins=[0, 64, 100], labels=[0, 1])
     df = df[['clean_notes', 'class', 'vote']]
     # drop duplicates
     df = df.drop_duplicates(subset=['clean_notes']).reset_index(drop=True)
@@ -85,6 +90,7 @@ training_args = TrainingArguments(
 
 def train_model(train_dataset, val_dataset):
     model = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=3)
+    # model = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=2)
     
     trainer = Trainer(
         model=model,
@@ -104,11 +110,28 @@ def train_model(train_dataset, val_dataset):
 
 def hp_space(trial):
     return {
-        "learning_rate": trial.suggest_loguniform("learning_rate", 1e-5, 1e-3),
+        "learning_rate": trial.suggest_loguniform("learning_rate", 5e-6, 1e-4),
         "per_device_train_batch_size": trial.suggest_categorical("per_device_train_batch_size", [8, 16, 32]),
         "num_train_epochs": trial.suggest_int("num_train_epochs", 2, 5),
-        "warmup_steps": trial.suggest_categorical("warmup_steps", [50, 100, 200, 300]),
+        "warmup_steps": trial.suggest_categorical("warmup_steps", [0, 100, 200, 300]),
+        "weight_decay": trial.suggest_loguniform("weight_decay", 1e-5, 1e-2),
     }
+
+def csv_callback(study, trial):
+    fieldnames = ['number', 'lr', 'batch_size', 'epochs', 'warmup_steps', 'weight_decay', 'value']
+    with open(REPORT_PATH, 'a', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if f.tell() == 0:
+            writer.writeheader()
+        writer.writerow({
+            'number': trial.number,
+            'lr': trial.params['learning_rate'],
+            'batch_size': trial.params['per_device_train_batch_size'],
+            'epochs': trial.params['num_train_epochs'],
+            'warmup_steps': trial.params['warmup_steps'],
+            'weight_decay': trial.params['weight_decay'],
+            'value': trial.value
+        })
 
 def hyperparameter_search(train_dataset, val_dataset):
     trainer = Trainer(
@@ -132,10 +155,14 @@ def hyperparameter_search(train_dataset, val_dataset):
     best_run = trainer.hyperparameter_search(
         direction="maximize",
         hp_space=hp_space,
-        n_trials=20,
+        n_trials=10,
         backend="optuna",
-        compute_objective=lambda metrics: metrics["eval_f1"]
+        compute_objective=lambda metrics: metrics['eval_f1'],
+        # callbacks=[csv_callback]
     )
+
+    df = best_run.study.trials_dataframe()
+    df.to_csv(REPORT_PATH, index=False)
 
     print("Best run:", best_run)
 
@@ -302,6 +329,5 @@ def train_and_evaluate_transformer():
     model = train_transformer(train_loader, val_loader, vocab_size=len(vocab.itos))
 
 if __name__ == "__main__":
-    download_nltk_resources()
-    train_and_evaluate_transformer()
+    train_and_evaluate()
 
