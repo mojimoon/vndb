@@ -33,7 +33,9 @@ def top_n_words(texts, n=30):
 
 def plot_length_distribution(df):
     plt.figure(figsize=(8,4))
-    sns.histplot(df['clean_notes'].apply(lambda x: len(x.split())), bins=30, kde=True)
+    lengths = df['clean_notes'].str.split().apply(len)
+    sns.histplot(lengths, bins=30, kde=True)
+    print(lengths.describe())
     plt.title('Word Count Distribution')
     plt.xlabel('Word Count')
     plt.ylabel('Frequency')
@@ -722,14 +724,14 @@ def general_stat():
 
     top_words = top_n_words(df['clean_notes'].tolist(), n=30)
 
-    # plot_length_distribution(df)
-    plot_wordcloud(df, label=1, top_words=top_words)
-    plot_wordcloud(df, label=0, top_words=top_words)
-    plot_wordcloud_lengthy(df, label=1, min_length=50, top_words=top_words)
-    plot_wordcloud_lengthy(df, label=0, min_length=50, top_words=top_words)
-    plot_top_words(df, n=30)
+    plot_length_distribution(df)
+    # plot_wordcloud(df, label=1, top_words=top_words)
+    # plot_wordcloud(df, label=0, top_words=top_words)
+    # plot_wordcloud_lengthy(df, label=1, min_length=50, top_words=top_words)
+    # plot_wordcloud_lengthy(df, label=0, min_length=50, top_words=top_words)
+    # plot_top_words(df, n=30)
     # plot_length_vs_vote_scatter(df)
-    plot_top_words_vs_vote(df, n=15)
+    # plot_top_words_vs_vote(df, n=15)
 
 if __name__ == "__main__":
     # train_and_evaluate()
