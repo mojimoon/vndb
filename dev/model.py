@@ -417,6 +417,6 @@ def train_and_evaluate_transformer():
     model = train_transformer(train_loader, val_loader, vocab_size=len(vocab.itos))
 
 if __name__ == "__main__":
-    # train_and_evaluate()
-    train_and_evaluate_transformer()
+    train_and_evaluate()
+    # train_and_evaluate_transformer()
 
