@@ -116,7 +116,7 @@ def plot_top_words_vs_vote(df, n=10):
         plt.ylabel('Count')
         plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig('img/top_words_vs_vote_excl.png') 
+    plt.savefig('img/top_words_vs_vote.png') 
 
 def plot_votes(df):
     sns.set(style="whitegrid")
