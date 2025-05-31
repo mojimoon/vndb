@@ -10,8 +10,8 @@ import matplotlib.pyplot as plt
 import torch
 import optuna
 import torch.nn as nn
-# import tensorflow as tf
-# import tensorflow.keras.layers as layers
+import tensorflow as tf
+import tensorflow.keras.layers as layers
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, mean_squared_error
@@ -152,7 +152,7 @@ def plot_votes(df):
 
     print(df['vote'].describe())
 
-# Begin DistilBERT
+# DistilBERT
 
 def clean_text(text):
     cleaned = re.sub(r"[^A-Za-z0-9.,!?;:'\"()\- ]+", " ", str(text))
@@ -362,7 +362,7 @@ def evaluate_model(model, val_dataset, save_path=None, plt_title='Confusion Matr
     
     return report, mse
 
-# Begin Baseline Transformer
+# Baseline Transformer
 
 def download_nltk_resources():
     import nltk
@@ -477,207 +477,207 @@ def train_transformer(train_loader, val_loader, vocab_size, device='cuda'):
     plot_cm(y_pred, y_true, save_path='img/transformer_confusion_matrix.png', _title='Transformer Confusion Matrix')
     return model
 
-# Begin Transformer w/ token-and-position embeddings
+# Transformer w/ token-and-position embeddings
 
-# class CustomMultiHeadAttention(layers.Layer):
-#     def __init__(self, embed_dim, num_heads=2, **kwargs):
-#         super().__init__(**kwargs)
-#         assert embed_dim % num_heads == 0, "embed_dim must be divisible by num_heads"
+class CustomMultiHeadAttention(layers.Layer):
+    def __init__(self, embed_dim, num_heads=2, **kwargs):
+        super().__init__(**kwargs)
+        assert embed_dim % num_heads == 0, "embed_dim must be divisible by num_heads"
 
-#         self.embed_dim = embed_dim
-#         self.num_heads = num_heads
-#         self.projection_dim = embed_dim // num_heads
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.projection_dim = embed_dim // num_heads
 
-#         self.query_dense = layers.Dense(embed_dim)
-#         self.key_dense = layers.Dense(embed_dim)
-#         self.value_dense = layers.Dense(embed_dim)
-#         self.combine_heads = layers.Dense(embed_dim)
+        self.query_dense = layers.Dense(embed_dim)
+        self.key_dense = layers.Dense(embed_dim)
+        self.value_dense = layers.Dense(embed_dim)
+        self.combine_heads = layers.Dense(embed_dim)
 
-#     def attention(self, query, key, value):
-#         score = tf.matmul(query, key, transpose_b=True)
-#         dim_key = tf.cast(tf.shape(key)[-1], tf.float32)
-#         scaled_score = score / tf.math.sqrt(dim_key)
-#         weights = tf.nn.softmax(scaled_score, axis=-1)
-#         output = tf.matmul(weights, value)
-#         return output
+    def attention(self, query, key, value):
+        score = tf.matmul(query, key, transpose_b=True)
+        dim_key = tf.cast(tf.shape(key)[-1], tf.float32)
+        scaled_score = score / tf.math.sqrt(dim_key)
+        weights = tf.nn.softmax(scaled_score, axis=-1)
+        output = tf.matmul(weights, value)
+        return output
 
-#     def separate_heads(self, x, batch_size):
-#         x = tf.reshape(x, (batch_size, -1, self.num_heads, self.projection_dim))
-#         return tf.transpose(x, perm=[0, 2, 1, 3])  # (batch, heads, seq_len, dim)
+    def separate_heads(self, x, batch_size):
+        x = tf.reshape(x, (batch_size, -1, self.num_heads, self.projection_dim))
+        return tf.transpose(x, perm=[0, 2, 1, 3])  # (batch, heads, seq_len, dim)
 
-#     def call(self, inputs):
-#         batch_size = tf.shape(inputs)[0]
+    def call(self, inputs):
+        batch_size = tf.shape(inputs)[0]
 
-#         query = self.query_dense(inputs)
-#         key = self.key_dense(inputs)
-#         value = self.value_dense(inputs)
+        query = self.query_dense(inputs)
+        key = self.key_dense(inputs)
+        value = self.value_dense(inputs)
 
-#         query = self.separate_heads(query, batch_size)
-#         key = self.separate_heads(key, batch_size)
-#         value = self.separate_heads(value, batch_size)
+        query = self.separate_heads(query, batch_size)
+        key = self.separate_heads(key, batch_size)
+        value = self.separate_heads(value, batch_size)
 
-#         attention_output = self.attention(query, key, value)
+        attention_output = self.attention(query, key, value)
 
-#         attention_output = tf.transpose(attention_output, perm=[0, 2, 1, 3])
-#         concat_attention = tf.reshape(attention_output, (batch_size, -1, self.embed_dim))
-#         output = self.combine_heads(concat_attention)
-#         return output
+        attention_output = tf.transpose(attention_output, perm=[0, 2, 1, 3])
+        concat_attention = tf.reshape(attention_output, (batch_size, -1, self.embed_dim))
+        output = self.combine_heads(concat_attention)
+        return output
 
-#     def get_config(self):
-#         config = super().get_config()
-#         config.update({
-#             "embed_dim": self.embed_dim,
-#             "num_heads": self.num_heads
-#         })
-#         return config
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "embed_dim": self.embed_dim,
+            "num_heads": self.num_heads
+        })
+        return config
 
-# class TransformerBlock(layers.Layer):
-#     def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1, **kwargs):
-#         super().__init__(**kwargs)
-#         self.embed_dim = embed_dim
-#         self.num_heads = num_heads
-#         self.ff_dim = ff_dim
-#         self.rate = rate
+class TransformerBlock(layers.Layer):
+    def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1, **kwargs):
+        super().__init__(**kwargs)
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.ff_dim = ff_dim
+        self.rate = rate
 
-#         self.att = CustomMultiHeadAttention(embed_dim=embed_dim, num_heads=num_heads)
-#         self.ffn = tf.keras.Sequential(
-#             [layers.Dense(ff_dim, activation="relu"), layers.Dense(embed_dim),]
-#         )
-#         self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-#         self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-#         self.dropout1 = tf.keras.layers.Dropout(rate)
-#         self.dropout2 = tf.keras.layers.Dropout(rate)
+        self.att = CustomMultiHeadAttention(embed_dim=embed_dim, num_heads=num_heads)
+        self.ffn = tf.keras.Sequential(
+            [layers.Dense(ff_dim, activation="relu"), layers.Dense(embed_dim),]
+        )
+        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.dropout1 = tf.keras.layers.Dropout(rate)
+        self.dropout2 = tf.keras.layers.Dropout(rate)
 
-#     def call(self, inputs):
-#         attn_output = self.att(inputs)
-#         attn_output = self.dropout1(attn_output)
-#         out1 = self.layernorm1(inputs + attn_output)
-#         ffn_output = self.ffn(out1)
-#         ffn_output = self.dropout2(ffn_output)
-#         return self.layernorm2(out1 + ffn_output)
+    def call(self, inputs):
+        attn_output = self.att(inputs)
+        attn_output = self.dropout1(attn_output)
+        out1 = self.layernorm1(inputs + attn_output)
+        ffn_output = self.ffn(out1)
+        ffn_output = self.dropout2(ffn_output)
+        return self.layernorm2(out1 + ffn_output)
 
-#     def get_config(self):
-#         config = super().get_config()
-#         config.update({
-#             "embed_dim": self.embed_dim,
-#             "num_heads": self.num_heads,
-#             "ff_dim": self.ff_dim,
-#             "rate": self.rate,
-#         })
-#         return config
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "embed_dim": self.embed_dim,
+            "num_heads": self.num_heads,
+            "ff_dim": self.ff_dim,
+            "rate": self.rate,
+        })
+        return config
 
-# class TokenAndPositionEmbedding(tf.keras.layers.Layer):
-#     def __init__(self, maxlen, vocab_size, embed_dim, **kwargs):
-#         super().__init__(**kwargs)
-#         self.maxlen = maxlen
-#         self.vocab_size = vocab_size
-#         self.embed_dim = embed_dim
-#         self.token_emb = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embed_dim)
-#         self.pos_emb = tf.keras.layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
+class TokenAndPositionEmbedding(tf.keras.layers.Layer):
+    def __init__(self, maxlen, vocab_size, embed_dim, **kwargs):
+        super().__init__(**kwargs)
+        self.maxlen = maxlen
+        self.vocab_size = vocab_size
+        self.embed_dim = embed_dim
+        self.token_emb = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embed_dim)
+        self.pos_emb = tf.keras.layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
 
-#     def call(self, x):
-#         maxlen = tf.shape(x)[-1]
-#         positions = tf.range(start=0, limit=maxlen, delta=1)
-#         positions = self.pos_emb(positions)
-#         x = self.token_emb(x)
-#         return x + positions
+    def call(self, x):
+        maxlen = tf.shape(x)[-1]
+        positions = tf.range(start=0, limit=maxlen, delta=1)
+        positions = self.pos_emb(positions)
+        x = self.token_emb(x)
+        return x + positions
 
-#     def get_config(self):
-#         config = super().get_config().copy()
-#         config.update({
-#             "maxlen": self.maxlen,
-#             "vocab_size": self.vocab_size,
-#             "embed_dim": self.embed_dim
-#         })
-#         return config
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            "maxlen": self.maxlen,
+            "vocab_size": self.vocab_size,
+            "embed_dim": self.embed_dim
+        })
+        return config
 
-# def Transformer(maxlen, vocab_size):
-#     embed_dim = 32
-#     num_heads = 2
-#     ff_dim = 32
+def Transformer(maxlen, vocab_size):
+    embed_dim = 32
+    num_heads = 2
+    ff_dim = 32
 
-#     inputs = tf.keras.layers.Input(shape=(maxlen,))
-#     embedding_layer = TokenAndPositionEmbedding(maxlen, vocab_size, embed_dim)
-#     x = embedding_layer(inputs)
-#     transformer_block = TransformerBlock(embed_dim, num_heads, ff_dim)
-#     x = transformer_block(x)
-#     x = tf.keras.layers.GlobalAveragePooling1D()(x)
-#     x = tf.keras.layers.Dropout(0.1)(x)
-#     x = tf.keras.layers.Dense(20, activation="relu")(x)
-#     x = tf.keras.layers.Dropout(0.1)(x)
-#     outputs = tf.keras.layers.Dense(2, activation="softmax")(x)
+    inputs = tf.keras.layers.Input(shape=(maxlen,))
+    embedding_layer = TokenAndPositionEmbedding(maxlen, vocab_size, embed_dim)
+    x = embedding_layer(inputs)
+    transformer_block = TransformerBlock(embed_dim, num_heads, ff_dim)
+    x = transformer_block(x)
+    x = tf.keras.layers.GlobalAveragePooling1D()(x)
+    x = tf.keras.layers.Dropout(0.1)(x)
+    x = tf.keras.layers.Dense(20, activation="relu")(x)
+    x = tf.keras.layers.Dropout(0.1)(x)
+    outputs = tf.keras.layers.Dense(2, activation="softmax")(x)
 
-#     model = tf.keras.Model(inputs=inputs, outputs=outputs)
-#     return model
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    return model
 
-# def train_transformer_embedding(train_df, val_df, vocab_size=20000, maxlen=200):
-#     from tensorflow.keras.preprocessing import text
-#     from tensorflow.keras.preprocessing.sequence import pad_sequences
+def train_transformer_embedding(train_df, val_df, vocab_size=20000, maxlen=200):
+    from tensorflow.keras.preprocessing import text
+    from tensorflow.keras.preprocessing.sequence import pad_sequences
 
-#     tokenizer = text.Tokenizer(num_words=vocab_size, oov_token="<OOV>")
-#     tokenizer.fit_on_texts(train_df['clean_notes'].tolist() + val_df['clean_notes'].tolist())
+    tokenizer = text.Tokenizer(num_words=vocab_size, oov_token="<OOV>")
+    tokenizer.fit_on_texts(train_df['clean_notes'].tolist() + val_df['clean_notes'].tolist())
     
-#     trainX = tokenizer.texts_to_sequences(train_df['clean_notes'].tolist())
-#     trainX = pad_sequences(trainX, maxlen=maxlen)
-#     trainy = train_df['class'].astype(int).values # to numpy array
+    trainX = tokenizer.texts_to_sequences(train_df['clean_notes'].tolist())
+    trainX = pad_sequences(trainX, maxlen=maxlen)
+    trainy = train_df['class'].astype(int).values # to numpy array
 
-#     valX = tokenizer.texts_to_sequences(val_df['clean_notes'].tolist())
-#     valX = pad_sequences(valX, maxlen=maxlen)
-#     valy = val_df['class'].astype(int).values
+    valX = tokenizer.texts_to_sequences(val_df['clean_notes'].tolist())
+    valX = pad_sequences(valX, maxlen=maxlen)
+    valy = val_df['class'].astype(int).values
 
-#     model = Transformer(maxlen, vocab_size)
-#     model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+    model = Transformer(maxlen, vocab_size)
+    model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
 
-#     checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
-#         filepath='models/transformer_embedding.h5',
-#         save_best_only=True,
-#         monitor='val_loss',
-#         mode='min',
-#         verbose=1
-#     )
+    checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
+        filepath='models/transformer_embedding.h5',
+        save_best_only=True,
+        monitor='val_loss',
+        mode='min',
+        verbose=1
+    )
     
-#     history = model.fit(
-#         trainX, trainy, batch_size=16, epochs=5, verbose=2,
-#         validation_data=(valX, valy),
-#         callbacks=[checkpoint_cb]
-#     )
+    history = model.fit(
+        trainX, trainy, batch_size=16, epochs=5, verbose=2,
+        validation_data=(valX, valy),
+        callbacks=[checkpoint_cb]
+    )
 
-#     tokenizer_json = tokenizer.to_json()
-#     with open('models/transformer_tokenizer.json', 'w') as f:
-#         json.dump(tokenizer_json, f)
+    tokenizer_json = tokenizer.to_json()
+    with open('models/transformer_tokenizer.json', 'w') as f:
+        json.dump(tokenizer_json, f)
     
-#     return model, tokenizer
+    return model, tokenizer
 
-# def evaluate_transformer_embedding(model, val_df, tokenizer, maxlen=200):
-#     from tensorflow.keras.preprocessing.sequence import pad_sequences
+def evaluate_transformer_embedding(model, val_df, tokenizer, maxlen=200):
+    from tensorflow.keras.preprocessing.sequence import pad_sequences
 
-#     valX = tokenizer.texts_to_sequences(val_df['clean_notes'].tolist())
-#     valX = pad_sequences(valX, maxlen=maxlen)
-#     valy = val_df['class'].astype(int).values
+    valX = tokenizer.texts_to_sequences(val_df['clean_notes'].tolist())
+    valX = pad_sequences(valX, maxlen=maxlen)
+    valy = val_df['class'].astype(int).values
 
-#     loss, accuracy = model.evaluate(valX, valy, verbose=2)
-#     print(f"Validation Loss: {loss:.4f}, Validation Accuracy: {accuracy:.4f}")
+    loss, accuracy = model.evaluate(valX, valy, verbose=2)
+    print(f"Validation Loss: {loss:.4f}, Validation Accuracy: {accuracy:.4f}")
 
-#     predictions = model.predict(valX)
-#     preds = predictions.argmax(axis=-1)
+    predictions = model.predict(valX)
+    preds = predictions.argmax(axis=-1)
 
-#     report = classification_report(valy, preds, output_dict=True)
-#     print("Classification Report:\n", report)
+    report = classification_report(valy, preds, output_dict=True)
+    print("Classification Report:\n", report)
 
-#     plot_cm(preds, valy, save_path='img/transformer_embedding_confusion_matrix.png', _title='Transformer Embedding Confusion Matrix')
+    plot_cm(preds, valy, save_path='img/transformer_embedding_confusion_matrix.png', _title='Transformer Embedding Confusion Matrix')
     
-#     return report
+    return report
 
-# def load_transformer_embedding():
-#     from tensorflow.keras.models import load_model
-#     model = load_model("models/transformer_embedding.h5", custom_objects={
-#         "TokenAndPositionEmbedding": TokenAndPositionEmbedding,
-#         "TransformerBlock": TransformerBlock,
-#         "CustomMultiHeadAttention": CustomMultiHeadAttention
-#     })
-#     return model
+def load_transformer_embedding():
+    from tensorflow.keras.models import load_model
+    model = load_model("models/transformer_embedding.h5", custom_objects={
+        "TokenAndPositionEmbedding": TokenAndPositionEmbedding,
+        "TransformerBlock": TransformerBlock,
+        "CustomMultiHeadAttention": CustomMultiHeadAttention
+    })
+    return model
 
-# Begin main functions
+# main functions
 
 def train_and_evaluate():
     df = pd.read_csv(DATA_PATH)
@@ -703,11 +703,11 @@ def train_and_evaluate_transformer_baseline():
     val_loader = DataLoader(val_dataset, batch_size=64)
     model = train_transformer(train_loader, val_loader, vocab_size=len(vocab.itos))
 
-# def train_and_evaluate_transformer_embedding():
-#     df = pd.read_csv(DATA_PATH)
-#     train_df, val_df = preprocess_data_transformer(df)
-#     model, tokenizer = train_transformer_embedding(train_df, val_df)
-#     evaluate_transformer_embedding(model, val_df, tokenizer)
+def train_and_evaluate_transformer_embedding():
+    df = pd.read_csv(DATA_PATH)
+    train_df, val_df = preprocess_data_transformer(df)
+    model, tokenizer = train_transformer_embedding(train_df, val_df)
+    evaluate_transformer_embedding(model, val_df, tokenizer)
 
 def general_stat():
     df = pd.read_csv(DATA_PATH)
