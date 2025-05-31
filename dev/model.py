@@ -23,6 +23,14 @@ REPORT_PATH = 'logs/hyperparameter_report.csv'
 
 # plotting
 
+def top_n_words(texts, n=30):
+    from collections import Counter
+    all_words = ' '.join(texts).split()
+    counter = Counter(all_words)
+    common_words = counter.most_common(n)
+    words, counts = zip(*common_words)
+    return list(words)
+
 def plot_length_distribution(df):
     plt.figure(figsize=(8,4))
     sns.histplot(df['clean_notes'].apply(lambda x: len(x.split())), bins=30, kde=True)
@@ -31,25 +39,37 @@ def plot_length_distribution(df):
     plt.ylabel('Frequency')
     plt.savefig('img/word_count_distribution.png')
 
-def plot_wordcloud(df, label=1):
+def plot_wordcloud(df, label=1, top_words=None):
     from wordcloud import WordCloud
     text = ' '.join(df[df['class']==label]['clean_notes'])
+
+    if top_words:
+        for word in top_words:
+            text = text.replace(word, '')
+        text = re.sub(r'\s+', ' ', text).strip()
+
     wc = WordCloud(width=800, height=400, background_color='white').generate(text)
     plt.figure(figsize=(10,5))
     plt.imshow(wc, interpolation='bilinear')
     plt.axis('off')
-    plt.title(f'WordCloud for class={label}')
-    plt.savefig(f'img/wordcloud_class_{label}.png')
+    plt.title(f'WordCloud for class={label} (Excl. Common Terms)')
+    plt.savefig(f'img/wordcloud_class_{label}_excl.png')
 
-def plot_wordcloud_lengthy(df, label=1, min_length=50):
+def plot_wordcloud_lengthy(df, label=1, min_length=50, top_words=None):
     from wordcloud import WordCloud
     text = ' '.join(df[(df['class']==label) & (df['clean_notes'].str.len() >= min_length)]['clean_notes'])
+
+    if top_words:
+        for word in top_words:
+            text = text.replace(word, '')
+        text = re.sub(r'\s+', ' ', text).strip()
+    
     wc = WordCloud(width=800, height=400, background_color='white').generate(text)
     plt.figure(figsize=(10,5))
     plt.imshow(wc, interpolation='bilinear')
     plt.axis('off')
-    plt.title(f'WordCloud for class={label} with min length {min_length}')
-    plt.savefig(f'img/wordcloud_class_{label}_minlen_{min_length}.png')
+    plt.title(f'WordCloud for class={label} with min length {min_length} (Excl. Common Terms)')
+    plt.savefig(f'img/wordcloud_class_{label}_minlen_{min_length}_excl.png')
 
 def plot_top_words(df, n=20):
     from collections import Counter
@@ -76,7 +96,6 @@ def plot_length_vs_vote_scatter(df):
 
 def plot_top_words_vs_vote(df, n=10):
     # show top 10 words for each class
-    from collections import Counter
     from sklearn.feature_extraction.text import CountVectorizer
     vectorizer = CountVectorizer(max_features=1000, stop_words='english')
     X = vectorizer.fit_transform(df['clean_notes'])
@@ -88,16 +107,16 @@ def plot_top_words_vs_vote(df, n=10):
     _top_words = [feature_names[_top[i]] for i in range(nbin)]
     _top_counts = [_words[i][_top[i]] for i in range(nbin)]
 
-    plt.figure(figsize=(nbin * 3, 6))
+    plt.figure(figsize=(nbin * 4, 6))
     for i in range(nbin):
         plt.subplot(1, nbin, i + 1)
         sns.barplot(x=_top_words[i], y=_top_counts[i], palette='viridis')
-        plt.title(f'Top {n} Words for Vote Ranged {i * 20}-{(i + 1) * 20}')
+        plt.title(f'Top Words for Vote Ranged {i * 20}-{(i + 1) * 20}')
         plt.xlabel('Words')
         plt.ylabel('Count')
         plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig('img/top_words_vs_vote.png') 
+    plt.savefig('img/top_words_vs_vote_excl.png') 
 
 def plot_votes(df):
     sns.set(style="whitegrid")
@@ -698,14 +717,19 @@ def general_stat():
     df = df[df['word_count'] >= 5].reset_index(drop=True)
     df['class'] = pd.cut(df['vote'], bins=[0, 69, 100], labels=[0, 1])
 
+    # remove short words
+    df['clean_notes'] = df['clean_notes'].apply(lambda x: ' '.join([w for w in x.split() if len(w) > 2]))
+
+    top_words = top_n_words(df['clean_notes'].tolist(), n=30)
+
     # plot_length_distribution(df)
-    # plot_wordcloud(df, label=1)
-    # plot_wordcloud(df, label=0)
-    plot_wordcloud_lengthy(df, label=1, min_length=50)
-    plot_wordcloud_lengthy(df, label=0, min_length=50)
+    plot_wordcloud(df, label=1, top_words=top_words)
+    plot_wordcloud(df, label=0, top_words=top_words)
+    plot_wordcloud_lengthy(df, label=1, min_length=50, top_words=top_words)
+    plot_wordcloud_lengthy(df, label=0, min_length=50, top_words=top_words)
     plot_top_words(df, n=30)
     # plot_length_vs_vote_scatter(df)
-    plot_top_words_vs_vote(df)
+    plot_top_words_vs_vote(df, n=15)
 
 if __name__ == "__main__":
     # train_and_evaluate()
