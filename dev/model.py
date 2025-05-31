@@ -396,7 +396,7 @@ def preprocess_data_transformer(df):
 
 class TextVocab:
     def __init__(self, texts, min_freq=2):
-        self.itos = ['<pad>', '<unk>']
+        self.itos = ['<PAD>', '<OOV>']
         self.stoi = {t: i for i, t in enumerate(self.itos)}
         freq = {}
         for text in texts:
@@ -408,9 +408,9 @@ class TextVocab:
                 self.itos.append(word)
     def encode(self, text, max_len):
         tokens = text.lower().split()
-        ids = [self.stoi.get(w, self.stoi['<unk>']) for w in tokens]
+        ids = [self.stoi.get(w, self.stoi['<OOV>']) for w in tokens]
         if len(ids) < max_len:
-            ids += [self.stoi['<pad>']] * (max_len - len(ids))
+            ids += [self.stoi['<PAD>']] * (max_len - len(ids))
         else:
             ids = ids[:max_len]
         return ids
