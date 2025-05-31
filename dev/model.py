@@ -3,6 +3,8 @@ import re
 import csv
 import numpy as np
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 import torch
 import optuna
@@ -30,20 +32,15 @@ def preprocess_data(df):
     df['clean_notes'], df['word_count'] = zip(*df['notes'].apply(clean_text))
     df = df[df['word_count'] >= 5].reset_index(drop=True)
 
-    df['class'] = pd.cut(df['vote'], bins=[0, 40, 70, 100], labels=[0, 1, 2])
-    # [0, 40] = 0, [41, 70] = 1, [71, 100] = 2
-    # df['class'] = pd.cut(df['vote'], bins=[0, 64, 100], labels=[0, 1])
+    # df['class'] = pd.cut(df['vote'], bins=[0, 40, 70, 100], labels=[0, 1, 2])
+    df['class'] = pd.cut(df['vote'], bins=[0, 69, 100], labels=[0, 1])
     df = df[['clean_notes', 'class', 'vote']]
     # drop duplicates
     df = df.drop_duplicates(subset=['clean_notes']).reset_index(drop=True)
-    train_df, val_df = train_test_split(df, test_size=0.2, random_state=42949, stratify=df['class'])
+    train_df, val_df = train_test_split(df, test_size=0.2, random_state=21474, stratify=df['class'])
     return train_df, val_df
 
 def plot_votes(df):
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    import numpy as np
-
     sns.set(style="whitegrid")
     plt.figure(figsize=(10, 6))
     x = np.arange(0, 101, 5)
@@ -73,7 +70,7 @@ def plot_votes(df):
     plt.title('Vote Distribution')
     plt.xlabel('Vote')
     plt.ylabel('Frequency')
-    plt.savefig('vote_distribution.png')
+    plt.savefig('img/vote_distribution.png')
 
     print(df['vote'].describe())
 
@@ -127,8 +124,8 @@ training_args = TrainingArguments(
 )
 
 def train_model(train_dataset, val_dataset):
-    model = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=3)
-    # model = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=2)
+    # model = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=3)
+    model = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=2)
     
     trainer = Trainer(
         model=model,
@@ -211,13 +208,27 @@ def load_model():
     else:
         raise FileNotFoundError(f"Model not found at {MODEL_SAVE_PATH}")
 
-def evaluate_model(model, val_dataset):
+def plot_cm(predictions, labels, save_path):
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+    cm = confusion_matrix(labels, predictions)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    disp.plot(cmap=plt.cm.Blues)
+    plt.title('Confusion Matrix')
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Confusion matrix saved to {save_path}")
+
+def evaluate_model(model, val_dataset, save_path=None):
     trainer = Trainer(model=model)
     eval_results = trainer.evaluate(eval_dataset=val_dataset)
     print("Evaluation results:", eval_results)
     
     predictions, labels, _ = trainer.predict(val_dataset)
     preds = predictions.argmax(-1)
+
+    if save_path is not None:
+        plot_cm(preds, labels, save_path)
     
     report = classification_report(labels, preds, output_dict=True)
     print("Classification Report:\n", report)
@@ -251,11 +262,12 @@ def preprocess_data_transformer(df):
     df['clean_notes'], df['word_count'] = zip(*df['notes'].apply(clean_text_transformer))
     df = df[df['word_count'] >= 5].reset_index(drop=True)
 
-    df['class'] = pd.cut(df['vote'], bins=[0, 40, 70, 100], labels=[0, 1, 2])
+    # df['class'] = pd.cut(df['vote'], bins=[0, 40, 70, 100], labels=[0, 1, 2])
+    df['class'] = pd.cut(df['vote'], bins=[0, 69, 100], labels=[0, 1])
     df = df[['clean_notes', 'class', 'vote']]
     # drop duplicates
     df = df.drop_duplicates(subset=['clean_notes']).reset_index(drop=True)
-    train_df, val_df = train_test_split(df, test_size=0.2, random_state=42949, stratify=df['class'])
+    train_df, val_df = train_test_split(df, test_size=0.2, random_state=21474, stratify=df['class'])
     return train_df, val_df
 
 class TextVocab:
@@ -338,6 +350,7 @@ def train_transformer(train_loader, val_loader, vocab_size, device='cuda'):
             best_val_acc = acc
             torch.save(model.state_dict(), 'models/transformer-baseline.pt')
     print(classification_report(y_true, y_pred))
+    plot_cm(y_pred, y_true, save_path='img/transformer_confusion_matrix.png')
     return model
 
 # Begin main functions
@@ -348,7 +361,7 @@ def train_and_evaluate():
 
     model = train_model(train_dataset, val_dataset)
 
-    evaluate_model(model, val_dataset)
+    evaluate_model(model, val_dataset, save_path='img/distilbert_confusion_matrix.png')
 
 def train_with_hyperparameter_search():
     df = pd.read_csv(DATA_PATH)
@@ -367,5 +380,6 @@ def train_and_evaluate_transformer():
     model = train_transformer(train_loader, val_loader, vocab_size=len(vocab.itos))
 
 if __name__ == "__main__":
-    plot_votes(df=pd.read_csv(DATA_PATH))
+    # train_and_evaluate()
+    train_and_evaluate_transformer()
 
