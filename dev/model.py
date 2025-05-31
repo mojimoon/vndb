@@ -208,18 +208,55 @@ def load_model():
     else:
         raise FileNotFoundError(f"Model not found at {MODEL_SAVE_PATH}")
 
-def plot_cm(predictions, labels, save_path):
-    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+# def plot_cm(predictions, labels, save_path):
+#     from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
-    cm = confusion_matrix(labels, predictions)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-    disp.plot(cmap=plt.cm.Blues)
-    plt.title('Confusion Matrix')
+#     cm = confusion_matrix(labels, predictions)
+#     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+#     disp.plot(cmap=plt.cm.Blues)
+#     plt.title('Confusion Matrix')
+#     plt.savefig(save_path)
+#     plt.close()
+#     print(f"Confusion matrix saved to {save_path}")
+
+def plot_cm(predictions, labels, save_path, _title='Confusion Matrix'):
+    from sklearn.metrics import confusion_matrix, f1_score, accuracy_score
+    cm = confusion_matrix(labels, predictions, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    total = tn + fp + fn + tp
+    tpr = tp / (tp + fn) if (tp + fn) else 0.0
+    tnr = tn / (tn + fp) if (tn + fp) else 0.0 
+    fpr = fp / (fp + tn) if (fp + tn) else 0.0
+    fnr = fn / (fn + tp) if (fn + tp) else 0.0
+    f1 = f1_score(labels, predictions)
+    acc = accuracy_score(labels, predictions)
+
+    pred_sum = np.sum(cm, axis=0)
+    label_sum = np.sum(cm, axis=1)
+
+    cm_ext = np.zeros((3, 3), dtype=int)
+    cm_ext[:2, :2] = cm
+    # cm_ext[2, :2] = pred_sum
+    # cm_ext[:2, 2] = label_sum
+    # cm_ext[2, 2] = total
+
+    cell_text = [
+        [f"{tn}\nTNR={tnr:.2f}", f"{fp}\nFPR={fpr:.2f}", f"{label_sum[0]}"],
+        [f"{fn}\nFNR={fnr:.2f}", f"{tp}\nTPR={tpr:.2f}", f"{label_sum[1]}"],
+        [f"{pred_sum[0]}", f"{pred_sum[1]}", f"({total})\nF1={f1:.2f}\nAcc={acc:.2f}"]
+    ]
+
+    plt.figure(figsize=(6, 6))
+    ax = sns.heatmap(cm_ext, annot=cell_text, fmt="", cbar=False, cmap="Blues", annot_kws={"size": 12})
+
+    ax.set_xticklabels(['Pred 0', 'Pred 1', 'Total'], fontsize=12)
+    ax.set_yticklabels(['Label 0', 'Label 1', 'Total'], fontsize=12, rotation=0)
+    plt.title(_title, fontsize=16, weight="bold")
+    plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
-    print(f"Confusion matrix saved to {save_path}")
 
-def evaluate_model(model, val_dataset, save_path=None):
+def evaluate_model(model, val_dataset, save_path=None, plt_title='Confusion Matrix'):
     trainer = Trainer(model=model)
     eval_results = trainer.evaluate(eval_dataset=val_dataset)
     print("Evaluation results:", eval_results)
@@ -228,7 +265,7 @@ def evaluate_model(model, val_dataset, save_path=None):
     preds = predictions.argmax(-1)
 
     if save_path is not None:
-        plot_cm(preds, labels, save_path)
+        plot_cm(preds, labels, save_path, _title=plt_title)
     
     report = classification_report(labels, preds, output_dict=True)
     print("Classification Report:\n", report)
@@ -267,7 +304,7 @@ def preprocess_data_transformer(df):
     df = df[['clean_notes', 'class', 'vote']]
     # drop duplicates
     df = df.drop_duplicates(subset=['clean_notes']).reset_index(drop=True)
-    train_df, val_df = train_test_split(df, test_size=0.2, random_state=21474, stratify=df['class'])
+    train_df, val_df = train_test_split(df, test_size=0.2, random_state=65535, stratify=df['class'])
     return train_df, val_df
 
 class TextVocab:
@@ -350,7 +387,7 @@ def train_transformer(train_loader, val_loader, vocab_size, device='cuda'):
             best_val_acc = acc
             torch.save(model.state_dict(), 'models/transformer-baseline.pt')
     print(classification_report(y_true, y_pred))
-    plot_cm(y_pred, y_true, save_path='img/transformer_confusion_matrix.png')
+    plot_cm(y_pred, y_true, save_path='img/transformer_confusion_matrix.png', _title='Transformer Confusion Matrix')
     return model
 
 # Begin main functions
@@ -361,7 +398,7 @@ def train_and_evaluate():
 
     model = train_model(train_dataset, val_dataset)
 
-    evaluate_model(model, val_dataset, save_path='img/distilbert_confusion_matrix.png')
+    evaluate_model(model, val_dataset, save_path='img/distilbert_confusion_matrix.png', plt_title='DistilBERT Confusion Matrix')
 
 def train_with_hyperparameter_search():
     df = pd.read_csv(DATA_PATH)
