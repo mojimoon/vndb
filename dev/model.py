@@ -39,22 +39,43 @@ def preprocess_data(df):
     train_df, val_df = train_test_split(df, test_size=0.2, random_state=42949, stratify=df['class'])
     return train_df, val_df
 
-def test_vote_distribution(df):
+def plot_votes(df):
     import matplotlib.pyplot as plt
     import seaborn as sns
+    import numpy as np
 
     sns.set(style="whitegrid")
     plt.figure(figsize=(10, 6))
     x = np.arange(0, 101, 5)
-    sns.histplot(df['vote'], bins=x, kde=False)
-    plt.axvline(df['vote'].quantile(0.25), color='r', linestyle='--', label='Q1')
-    plt.axvline(df['vote'].quantile(0.5), color='r', linestyle='--', label='Med')
-    plt.axvline(df['vote'].quantile(0.75), color='r', linestyle='--', label='Q3')
+    sns.histplot(df['vote'], bins=x, kde=False, color='steelblue', stat='count')
+
+    # normal distribution line
+    mu, std = df['vote'].mean(), df['vote'].std()
+    p = np.exp(-0.5 * ((x - mu) / std) ** 2) / (std * np.sqrt(2 * np.pi))
+    plt.plot(x, p * len(df) * (x[1] - x[0]), color='darkblue', label='Norm Dist')
+    plt.legend()
+
+    q1 = df['vote'].quantile(0.25)
+    med = df['vote'].quantile(0.5)
+    q3 = df['vote'].quantile(0.75)
+
+    plt.axvline(q1, color='tab:orange', linestyle='--')
+    plt.axvline(med, color='tab:purple', linestyle='--')
+    plt.axvline(q3, color='tab:green', linestyle='--')
+
+    _y = plt.ylim()[1]
+
+    plt.text(q1 + 1, _y, f'Q1: {q1:.0f}', color='tab:orange')
+    plt.text(med + 1, _y, f'Med: {med:.0f}', color='tab:purple')
+    plt.text(q3 + 1, _y, f'Q3: {q3:.0f}', color='tab:green')
+    plt.text(mu + 1, _y * 0.96, f'Mean: {mu:.1f}', color='tab:brown')
+
     plt.title('Vote Distribution')
     plt.xlabel('Vote')
     plt.ylabel('Frequency')
-    plt.legend()
-    plt.savefig('logs/vote_distribution.png')
+    plt.savefig('vote_distribution.png')
+
+    print(df['vote'].describe())
 
 class VndbDataset(Dataset):
     def __init__(self, df, tokenizer, label_mode='class', max_length=256):
@@ -346,5 +367,5 @@ def train_and_evaluate_transformer():
     model = train_transformer(train_loader, val_loader, vocab_size=len(vocab.itos))
 
 if __name__ == "__main__":
-    test_vote_distribution(df=pd.read_csv(DATA_PATH))
+    plot_votes(df=pd.read_csv(DATA_PATH))
 
