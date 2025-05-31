@@ -39,6 +39,23 @@ def preprocess_data(df):
     train_df, val_df = train_test_split(df, test_size=0.2, random_state=42949, stratify=df['class'])
     return train_df, val_df
 
+def test_vote_distribution(df):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    sns.set(style="whitegrid")
+    plt.figure(figsize=(10, 6))
+    x = np.arange(0, 101, 5)
+    sns.histplot(df['vote'], bins=x, kde=False)
+    plt.axvline(df['vote'].quantile(0.25), color='r', linestyle='--', label='Q1')
+    plt.axvline(df['vote'].quantile(0.5), color='r', linestyle='--', label='Med')
+    plt.axvline(df['vote'].quantile(0.75), color='r', linestyle='--', label='Q3')
+    plt.title('Vote Distribution')
+    plt.xlabel('Vote')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.savefig('logs/vote_distribution.png')
+
 class VndbDataset(Dataset):
     def __init__(self, df, tokenizer, label_mode='class', max_length=256):
         self.texts = df['clean_notes'].tolist()
@@ -329,5 +346,5 @@ def train_and_evaluate_transformer():
     model = train_transformer(train_loader, val_loader, vocab_size=len(vocab.itos))
 
 if __name__ == "__main__":
-    train_and_evaluate()
+    test_vote_distribution(df=pd.read_csv(DATA_PATH))
 
