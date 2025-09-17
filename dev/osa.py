@@ -140,10 +140,11 @@ vn_titles_zh = vn_titles[(vn_titles['lang'] == 'zh-Hans')][['id', 'title']].rena
 result = result.merge(vn_titles_ja, on='vid', how='left')
 result = result.merge(vn_titles_zh, on='vid', how='left')
 result['cnt'] = result['char_names'].apply(lambda x: len(x.split(';')))
-result['url'] = "https://vndb.org/v" + result['vid'].astype(str)
-result = result[['vid', 'url', 'title_ja', 'title_zh', 'cnt', 'char_names']]
+result = result.merge(vn[['id', 'c_votecount', 'c_rating']], left_on='vid', right_on='id', how='left').drop(columns=['id'])
+result['c_rating'] = result['c_rating'].apply(lambda x: round(int(x) / 100, 2) if x != '\\N' else np.nan)
+result = result[['vid', 'title_ja', 'title_zh', 'c_votecount', 'c_rating', 'cnt', 'char_names']]
 # sort by cnt desc
 result = result.sort_values(by='cnt', ascending=False).reset_index(drop=True)
 
-result.to_csv(os.path.join(tmp, "青梅TV2.csv"), index=False, encoding='utf-8-sig')
+result.to_csv(os.path.join(tmp, "multiple_childhood_friends.csv"), index=False, encoding='utf-8-sig', sep=',')
 print(f"Saved result with shape: {result.shape}")
