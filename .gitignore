@@ -17,4 +17,4 @@ dev/models/
 dev/checkpoints/
 
 dev/logs/
-video/
+playground/tmp/
