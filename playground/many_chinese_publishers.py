@@ -64,15 +64,21 @@ releases_titles_zh = releases_titles[
 ]
 releases_titles_zh = releases_titles_zh[['id', 'title']]
 print(f"shape of releases_titles_zh: {releases_titles_zh.shape}")
-# 2. 和 releases_vn 连接，得到 ['id', 'title', 'vid']
+# 2. 通过 releases 筛掉补丁
+# nonpatch_release_ids = releases[releases['patch'] == 'f']['id'].tolist()
+# releases_titles_zh = releases_titles_zh[
+#     releases_titles_zh['id'].isin(nonpatch_release_ids)
+# ]
+# 3. 和 releases_vn 连接，得到 ['id', 'title', 'vid']
+releases_vn_nontrial = releases_vn[releases_vn['rtype'] != 'trial']
 releases_titles_zh = releases_titles_zh.merge(
-    releases_vn[['id', 'vid']],
+    releases_vn_nontrial[['id', 'vid']],
     left_on='id',
     right_on='id',
     how='inner'
 )
 print(f"shape of releases_titles_zh after merge with releases_vn: {releases_titles_zh.shape}")
-# 3. 和 releases_producers 连接，得到 ['id', 'title', 'vid', 'pid']
+# 4. 和 releases_producers 连接，得到 ['id', 'title', 'vid', 'pid']
 releases_producers_zh = releases_producers[
     (releases_producers['id'].isin(releases_titles_zh['id'])) &
     (releases_producers['publisher'] == 't')
@@ -84,7 +90,14 @@ releases_titles_producers_zh = releases_titles_zh.merge(
     how='inner'
 )
 print(f"shape of releases_titles_producers_zh: {releases_titles_producers_zh.shape}")
-# 4. 按照 vid 分组，统计 count(pid)
+# 5. 通过 producers 筛掉 co (company) 类型的发行商
+valid_producer_ids = producers[
+    producers['type'] != 'co'
+]['id'].tolist()
+releases_titles_producers_zh = releases_titles_producers_zh[
+    releases_titles_producers_zh['pid'].isin(valid_producer_ids)
+]
+# 6. 按照 vid 分组，统计 count(pid)
 grouped = releases_titles_producers_zh.groupby('vid').agg({
     'pid': 'nunique',
     'id': 'first',
@@ -93,15 +106,17 @@ grouped = releases_titles_producers_zh.groupby('vid').agg({
 # 仅日文游戏
 grouped = grouped[grouped['vid'].isin(vn_ids)]
 grouped = grouped.rename(columns={'pid': 'publisher_count'})
-# 5. 筛选出 count(pid) >= THRES 的记录
+# 7. 筛选出 count(pid) >= THRES 的记录
 grouped_filtered = grouped[grouped['publisher_count'] >= THRES]
 print(f"shape of grouped_filtered: {grouped_filtered.shape}")
-# 6. 展开 pid，获取发行商名称
+# 8. 展开 pid，获取发行商名称
 output_rows = []
 for _, row in grouped_filtered.iterrows():
     vid = row['vid']
     release_id = row['id']
-    titles = row['title']
+    titles = set(row['title'])
+    # remove '\N' from titles
+    titles.discard('\\N')
     # 获取对应的 pid 列表
     pids = releases_titles_producers_zh[
         releases_titles_producers_zh['vid'] == vid
@@ -111,12 +126,27 @@ for _, row in grouped_filtered.iterrows():
         producers['id'].isin(pids)
     ]['name'].tolist()
     output_rows.append({
-        'release_id': release_id,
-        'titles': "; ".join(titles),
-        'publishers': "; ".join(publisher_names)
+        'vid': vid,
+        'titles': "|".join(titles),
+        'publishers': "|".join(publisher_names)
     })
 
 output_df = pd.DataFrame(output_rows)
-output_csv_path = os.path.join(tmp, "many.csv")
-output_df.to_csv(output_csv_path, index=False)
-print(f"Output written to {output_csv_path}")
+# output_csv_path = os.path.join(tmp, "很多发行商.csv")
+# output_df.to_csv(output_csv_path, index=False)
+# print(f"Output written to {output_csv_path}")
+
+import xlsxwriter
+# 重要：必须用 UTF-8 编码保存
+output_xlsx_path = os.path.join(tmp, "很多汉化组.xlsx")
+workbook = xlsxwriter.Workbook(output_xlsx_path)
+worksheet = workbook.add_worksheet()
+worksheet.write(0, 0, "id")
+worksheet.write(0, 1, "标题")
+worksheet.write(0, 2, "发行商")
+for row_num, row in enumerate(output_rows, start=1):
+    worksheet.write(row_num, 0, row['vid'])
+    worksheet.write(row_num, 1, row['titles'])
+    worksheet.write(row_num, 2, row['publishers'])
+workbook.close()
+print(f"Output written to {output_xlsx_path}")
