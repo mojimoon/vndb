@@ -113,6 +113,7 @@ npm run deploy                       # 部署 Worker 和前端；表结构由每
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | 上面创建的 Token |
 | `CLOUDFLARE_ACCOUNT_ID` | 控制台 Workers & Pages 页面右侧的 Account ID |
+| `D1_DATABASE_ID` | `npx wrangler d1 list` 输出的 database_id |
 
 之后：
 
