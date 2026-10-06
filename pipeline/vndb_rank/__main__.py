@@ -16,7 +16,7 @@ from scipy.stats import kendalltau
 from . import __version__
 from .config import Config
 from .dump import Dump
-from .analysis import build_analysis, per_user_means, per_user_percentiles, sp_decile
+from .analysis import build_analysis, per_user_means, per_user_percentiles, user_attributes
 from .cf import CFConfig, build_users, similar_items
 from .export import PRODUCER_COLUMNS, VN_COLUMNS, _num, compact_json, rank_table, ranks_json, vn_rows, write_sql
 from .extract import load_catalogue, load_users, load_votes
@@ -26,7 +26,7 @@ from .pairs import build_pairs
 from .leaderboards import build_leaderboards
 from .storage import (
     USER_NOTE_SHARDS, VN_NOTE_SHARDS, day_number, merge_history, name_shards, note_shards,
-    rank_trend, text_parts, user_shards, voter_shards,
+    rank_trend, text_parts, user_shards, voter_records, voter_shards,
 )
 
 log = logging.getLogger("vndb_rank")
@@ -53,6 +53,24 @@ def _clean(v):
     if v is None or v is pd.NA or (isinstance(v, float) and np.isnan(v)):
         return None
     return v.item() if hasattr(v, "item") else v
+
+
+def pair_lookup(pairs, n: int):
+    """(i, j) -> [voters preferring i, voters preferring j] from the pair table."""
+    key = np.minimum(pairs.a, pairs.b).astype(np.int64) * n + np.maximum(pairs.a, pairs.b)
+    order = np.argsort(key)
+    key = key[order]
+
+    def get(i: int, j: int) -> list[int]:
+        k = min(i, j) * n + max(i, j)
+        p = np.searchsorted(key, k)
+        if p >= len(key) or key[p] != k:
+            return [0, 0]
+        q = order[p]
+        x, y = int(pairs.pv[q]), int(pairs.nv[q])  # pv: a preferred
+        return [x, y] if int(pairs.a[q]) == i else [y, x]
+
+    return get
 
 
 def load_previous_history(path: Path | None) -> dict[int, list]:
@@ -97,6 +115,11 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
     ranks["vndb"] = rank_table(pd.DataFrame({"v": vndb_order.to_numpy()}))["v"].to_numpy()
 
     neighbors = build_neighbors(pairs, ids, cfg.neighbors_per_category)
+    methods = list(scores.columns)
+    featured = [m for m in FEATURED if m in methods]
+    default = featured[0]
+    # Position under the default ranking as a 0-1 percentile (1 = top).
+    sci_pct = 1 - (ranks[default].to_numpy(dtype=np.float64) - 1) / max(n - 1, 1)
 
     cf = CFConfig(min_user_votes=cfg.min_user_votes)
     if cfg.skip_users:
@@ -104,27 +127,36 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
     else:
         user_records = build_users(votes, n, names, cf).records
         item_sims = similar_items(votes, n, cf)
+    h2h = pair_lookup(pairs, n)
+    item_sims = [[[j, s, c, *h2h(i, j)] for j, s, c in sims] for i, sims in enumerate(item_sims)]
     vn_mean = np.array([a["mean"] if a["mean"] is not None else np.nan for a in analysis])
     leaderboards = build_leaderboards(votes, extras, names, vn_mean, set(user_records))
-    voters = list(voter_shards(votes.vidx, votes.uid, votes.vote.astype(np.uint8), sp_decile(sp).astype(np.uint8)))
-    del votes, sp
+    attrs = user_attributes(votes, extras.user_total, [cat.vn["rating"].to_numpy(dtype=np.float64), sci_pct])
+    recs = voter_records(votes.uid, votes.vote.astype(np.uint8), sp, votes.labels, votes.year, attrs)
+    voters = list(voter_shards(votes.vidx, recs))
+    vote_sp = pd.DataFrame({"uid": votes.uid.astype(np.int64), "vidx": votes.vidx.astype(np.int64), "sp": np.rint(sp * 100)})
+    del votes, sp, recs, attrs
 
-    # Notes: per VN (newest first) and per user (only users with a page).
-    nt = extras.notes.sort_values(["vidx", "date"], ascending=[True, False])
+    # Notes: per VN (newest first) and per user (only users with a page), with
+    # the note's list labels, the author's vote count and the vote's sample percentile.
+    nt = extras.notes.merge(vote_sp, on=["uid", "vidx"], how="left")
+    nt["nvotes"] = nt["uid"].map(extras.user_total).fillna(0).astype(np.int64)
+    nt = nt.sort_values(["vidx", "date"], ascending=[True, False])
+    pct = lambda x: None if pd.isna(x) else int(x)
     vn_note_rows = [
-        [int(i), int(u), names.get(int(u), ""), int(v), int(d), t, int(u) in user_records]
-        for i, u, v, d, t in zip(nt["vidx"], nt["uid"], nt["vote"], nt["date"], nt["text"])
+        [int(i), int(u), names.get(int(u), ""), int(v), int(d), t, int(u) in user_records, int(lb), int(nv), pct(p)]
+        for i, u, v, d, t, lb, nv, p in zip(nt["vidx"], nt["uid"], nt["vote"], nt["date"], nt["text"], nt["labels"], nt["nvotes"], nt["sp"])
     ]
     nt = nt[nt["uid"].isin(list(user_records))].sort_values(["uid", "date"], ascending=[True, False])
-    user_note_rows = [[int(u), int(i), int(v), int(d), t] for u, i, v, d, t in zip(nt["uid"], nt["vidx"], nt["vote"], nt["date"], nt["text"])]
+    user_note_rows = [
+        [int(u), int(i), int(v), int(d), t, int(lb), pct(p)]
+        for u, i, v, d, t, lb, p in zip(nt["uid"], nt["vidx"], nt["vote"], nt["date"], nt["text"], nt["labels"], nt["sp"])
+    ]
     note_count = np.bincount(extras.notes["vidx"].to_numpy(dtype=np.int64), minlength=n) if len(extras.notes) else np.zeros(n, int)
     for i, a in enumerate(analysis):
         a["notes"] = int(note_count[i])
     del extras
 
-    methods = list(scores.columns)
-    featured = [m for m in FEATURED if m in methods]
-    default = featured[0]
     today = day_number(date)
     prev = load_previous_history(history_path)
     history = [merge_history(prev.get(int(vid)), today, [int(ranks[default].iloc[i]), int(ranks["vndb"].iloc[i])]) for i, vid in enumerate(ids)]
@@ -164,13 +196,14 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
         "neighbors": [compact_json(neighbors.get(int(v), [])) for v in ids],
         "relations": [compact_json(cat.relations.get(int(v), [])) for v in ids],
         "analysis": [compact_json(a) for a in analysis],
-        "similar": [compact_json([[int(ids[j]), s, c] for j, s, c in sims]) for sims in item_sims],
+        "similar": [compact_json([[int(ids[j]), s, c, w, l] for j, s, c, w, l in sims]) for sims in item_sims],
         "history": [compact_json(h) for h in history],
     }
     # Prebuilt API payloads, served by the worker without parsing.
     vndb_rank = ranks["vndb"].to_numpy()
+    sci_rank = ranks[default].to_numpy()
     cat_cols = ["id", "idx", "title", "latin", "title_ja", "title_zh", "title_en", "olang", "released",
-                "dev_id", "dev", "dev_latin", "votes", "rating", "length", "trend", "vndb_rank", "search"]
+                "dev_id", "dev", "dev_latin", "votes", "rating", "length", "trend", "vndb_rank", "sci_rank", "search"]
     dev_name = cat.producers.set_index("id")["name"].to_dict()
     dev_latin = cat.producers.set_index("id")["latin"].to_dict()
     cat_rows = []
@@ -181,7 +214,7 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
             int(r.id), i, r.title, _clean(r.latin), _clean(r.title_ja), _clean(r.title_zh), _clean(r.title_en), _clean(r.olang),
             None if pd.isna(r.released) else int(r.released), d, dev_name.get(d) if d is not None else None,
             None if lat is None or pd.isna(lat) else lat, int(r.votes), _clean(r.rating), _clean(r.length),
-            extra["trend"][i], int(vndb_rank[i]), r.search,
+            extra["trend"][i], int(vndb_rank[i]), int(sci_rank[i]), r.search,
         ])
     docs = {"catalogue": compact_json({"columns": cat_cols, "rows": cat_rows})}
     for m in methods:

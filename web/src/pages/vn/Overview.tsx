@@ -8,7 +8,7 @@ import { useVnContext } from "./VnLayout";
 export default function Overview() {
   const { t, lang } = useI18n();
   const { vn, meta, cat } = useVnContext();
-  const featured = meta.info.featured.filter((m) => vn.ranks[m]).slice(0, 8);
+  const featured = meta.info.featured.filter((m) => vn.ranks[m]).slice(0, 4);
   const a = vn.analysis;
   const signed = (x: number) => (x > 0 ? "+" : "") + x.toFixed(2);
   return (
@@ -16,7 +16,7 @@ export default function Overview() {
       <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {featured.map((m) => (
           <Link key={m} to={`/?m=${m}`} className="rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-accent">
-            <div className="truncate text-xs text-ink-3" title={methodName(m, lang)}>
+            <div className="truncate text-xs text-ink-2" title={methodName(m, lang)}>
               {methodName(m, lang)}
             </div>
             <div className="tabular mt-0.5 text-xl font-semibold">#{vn.ranks[m][0]}</div>
@@ -34,9 +34,8 @@ export default function Overview() {
             height={160}
           />
         </Card>
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
-          <Stat label={t("user.mean")} value={a.mean?.toFixed(2) ?? "—"} />
-          <Stat label={t("vn.ratings.std")} value={a.std?.toFixed(2) ?? "—"} />
+        <div className="grid grid-cols-3 gap-2 lg:grid-cols-1 lg:grid-rows-3">
+          <Stat label={t("vn.meanStd")} value={a.mean !== null && a.std !== null ? `${a.mean.toFixed(2)} ± ${a.std.toFixed(2)}` : "—"} />
           <Stat label={t("vn.ratings.sp")} value={a.sp ? `${(a.sp.mean * 100).toFixed(0)}%` : "—"} />
           <Stat label={t("vn.ratings.bias")} value={a.bias !== null ? signed(a.bias) : "—"} />
         </div>

@@ -192,6 +192,7 @@ class Votes:
     vidx: np.ndarray  # int32 index into Catalogue.vn
     vote: np.ndarray  # int16 on the 10-100 scale
     year: np.ndarray  # int16 year of the vote (0 = unknown)
+    labels: np.ndarray | None = None  # uint8 bit mask of list labels 1..6 (bit k-1 = label k)
 
     def __len__(self) -> int:
         return len(self.uid)
@@ -217,7 +218,7 @@ class Extras:
     """Side products of the ulist_vns pass."""
     user_total: pd.Series   # uid -> votes on any VN
     user_year: pd.Series    # uid -> votes cast in the dump's year
-    notes: pd.DataFrame     # uid, vidx, date (YYYYMMDD), vote (or 0), text; ranked VNs only
+    notes: pd.DataFrame     # uid, vidx, date (YYYYMMDD), vote (or 0), labels (bit mask), text; ranked VNs only
 
 
 NOTE_MIN_CHARS = 20
@@ -235,7 +236,7 @@ def load_votes(
     total_parts, year_count_parts, note_parts = [], [], []
     n_vn = len(catalogue.vn)
     id2idx = pd.Series(np.arange(n_vn, dtype=np.int32), index=catalogue.ids)
-    uid_parts, vidx_parts, vote_parts, year_parts = [], [], [], []
+    uid_parts, vidx_parts, vote_parts, year_parts, label_parts = [], [], [], [], []
     vn_labels = np.zeros((n_vn, LABELS + 1), dtype=np.int64)
 
     hist = np.zeros(101, dtype=np.int64)  # exact votes 0..100
@@ -253,6 +254,16 @@ def load_votes(
             chunk = chunk[~chunk["uid"].isin(ignored)]
         rows += len(chunk)
         chunk_vidx = strip_id(chunk["vid"]).map(id2idx)
+        lmask = pd.Series(np.zeros(len(chunk), np.uint8), index=chunk.index)
+        if "labels" in chunk:
+            lab = chunk["labels"].fillna("")
+            ranked = chunk_vidx.notna().to_numpy()
+            ranked_idx = chunk_vidx.to_numpy()[ranked].astype(np.int64)
+            for k in range(1, LABELS + 1):
+                has = lab.str.contains(rf"[{{,]{k}[,}}]", regex=True).to_numpy()
+                labels[k] += has.sum()
+                np.add.at(vn_labels[:, k], ranked_idx[has[ranked]], 1)
+                lmask |= (has.astype(np.uint8) << (k - 1)).astype(np.uint8)
         if "notes" in chunk:
             has_note = chunk["notes"].notna() & chunk_vidx.notna()
             if has_note.any():
@@ -266,20 +277,13 @@ def load_votes(
                         "vidx": chunk_vidx.loc[nt.index].astype(np.int64).to_numpy(),
                         "date": pd.to_numeric(date_col.str.replace("-", "").str[:8], errors="coerce").fillna(0).astype(np.int64).to_numpy(),
                         "vote": pd.to_numeric(chunk.loc[nt.index, "vote"], errors="coerce").fillna(0).astype(np.int64).to_numpy(),
+                        "labels": lmask.loc[nt.index].to_numpy(),
                         "text": nt["text"].str.slice(0, NOTE_MAX_CHARS).to_numpy(),
                     }))
-        if "labels" in chunk:
-            lab = chunk["labels"].fillna("")
-            ranked = chunk_vidx.notna().to_numpy()
-            ranked_idx = chunk_vidx.to_numpy()[ranked].astype(np.int64)
-            for k in range(1, LABELS + 1):
-                has = lab.str.contains(rf"[{{,]{k}[,}}]", regex=True).to_numpy()
-                labels[k] += has.sum()
-                np.add.at(vn_labels[:, k], ranked_idx[has[ranked]], 1)
 
         vote = pd.to_numeric(chunk["vote"], errors="coerce")
         ok = vote.notna()
-        chunk, vote, chunk_vidx = chunk[ok], vote[ok].astype(np.int16), chunk_vidx[ok]
+        chunk, vote, chunk_vidx, lmask = chunk[ok], vote[ok].astype(np.int16), chunk_vidx[ok], lmask[ok]
         hist += np.bincount(vote.clip(0, 100), minlength=101)
         total_parts.append(chunk["uid"].value_counts())
 
@@ -304,11 +308,13 @@ def load_votes(
         vidx_parts.append(chunk_vidx.to_numpy()[keep].astype(np.int32))
         vote_parts.append(vote.to_numpy()[keep])
         year_parts.append(year.fillna(0).to_numpy()[keep].astype(np.int16))
+        label_parts.append(lmask.to_numpy()[keep].astype(np.uint8))
 
     cat = lambda parts, dt: np.concatenate(parts) if parts else np.zeros(0, dt)
     uid, vidx, vote, year = cat(uid_parts, np.int32), cat(vidx_parts, np.int32), cat(vote_parts, np.int16), cat(year_parts, np.int16)
+    lab = cat(label_parts, np.uint8)
     order = np.lexsort((vidx, uid))
-    votes = Votes(uid=uid[order], vidx=vidx[order], vote=vote[order], year=year[order])
+    votes = Votes(uid=uid[order], vidx=vidx[order], vote=vote[order], year=year[order], labels=lab[order])
     log.info("votes: %d on ranked VNs from %d users (%d ignored users dropped)", len(uid), len(np.unique(uid)), len(ignored))
 
     total = int(hist.sum())
@@ -330,7 +336,7 @@ def load_votes(
         "ranked_users": int(len(np.unique(uid))),
     }
     merge = lambda parts: pd.concat(parts).groupby(level=0).sum() if parts else pd.Series(dtype=np.int64)
-    notes = pd.concat(note_parts, ignore_index=True) if note_parts else pd.DataFrame(columns=["uid", "vidx", "date", "vote", "text"])
+    notes = pd.concat(note_parts, ignore_index=True) if note_parts else pd.DataFrame(columns=["uid", "vidx", "date", "vote", "labels", "text"])
     extras = Extras(user_total=merge(total_parts), user_year=merge(year_count_parts), notes=notes)
     log.info("notes: %d (>= %d chars) on ranked VNs", len(notes), NOTE_MIN_CHARS)
     return votes, stats, vn_labels, extras

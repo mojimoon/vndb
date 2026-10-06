@@ -10,7 +10,7 @@ export interface Row extends CatalogueItem {
 
 /** URL keys of all filters (cleared together). */
 export const FILTER_KEYS = ["q", "lang", "from", "to", "minv", "maxv", "rmin", "rmax", "dev", "len"];
-export const ADVANCED_KEYS = ["lang", "from", "to", "minv", "maxv", "rmin", "rmax", "len"];
+export const ADVANCED_KEYS = ["lang", "minv", "maxv", "rmin", "rmax", "len"];
 
 export interface Filters {
   q: string;

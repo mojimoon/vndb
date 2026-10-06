@@ -178,6 +178,8 @@ def test_users_and_recommendations(snapshot):
         assert len(idx) >= 5 and (np.diff(idx) > 0).all() and ((10 <= vote) & (vote <= 100)).all() and idx.max() < n_vn
         assert all(r[0] not in set(idx.tolist()) for r in rec["recs"])  # never recommend what they voted on
         assert all(s[0] != int(uid) for s in rec["similar"])
+        # head-to-head over the common titles: higher + equal + lower == common
+        assert all(s[4] + s[5] + s[6] == s[3] and s[7] >= s[3] for s in rec["similar"])
         with_recs += bool(rec["recs"])
     assert with_recs > len(users) * 0.5
     # name index resolves every user
@@ -195,7 +197,7 @@ def test_similar_items_are_valid(snapshot):
     for vid, sim in db.execute("SELECT id, similar FROM vn"):
         s = json.loads(sim)
         nonempty += bool(s)
-        assert all(o in ids and o != vid and 0 < x <= 1 for o, x, _ in s)
+        assert all(o in ids and o != vid and 0 < x <= 1 and w + l <= c for o, x, c, w, l in s)
     assert nonempty > len(ids) * 0.5
 
 
@@ -239,20 +241,28 @@ def test_voter_shards_give_exact_joint_counts(snapshot):
     a = read_voters(parts(0), 0)
     n_votes = json.loads(db.execute("SELECT analysis FROM vn WHERE idx = 0").fetchone()[0])["n"]
     assert len(a) == n_votes and (np.diff(a["uid"].astype(np.int64)) > 0).all()
-    assert ((a["spd"] <= 9)).all() and ((a["vote"] >= 10) & (a["vote"] <= 100)).all()
+    assert (a["sp"] <= 199).all() and ((a["vote"] >= 10) & (a["vote"] <= 100)).all()
+    assert (a["labels"] < 64).all() and (a["nvotes"] >= 1).all() and ((a["umean"] >= 10) & (a["umean"] <= 100)).all()
+    assert ((a["cv"] >= -100) | (a["cv"] == -128)).all() and (a["cv"] <= 100).all() and (a["cs"] != -128).any()
+    # every voter's ranked votes share the same user attributes across VNs
+    a_attr = dict(zip(a["uid"].tolist(), zip(a["nvotes"].tolist(), a["cs"].tolist())))
     other, wins, losses, common = nb[0]
     b = read_voters(parts(idx[other]), idx[other])
     _, ia, ib = np.intersect1d(a["uid"], b["uid"], return_indices=True)
     assert len(ia) == common
     assert (a["vote"][ia] > b["vote"][ib]).sum() == wins and (a["vote"][ia] < b["vote"][ib]).sum() == losses
+    assert all(a_attr[u] == (n, c) for u, n, c in zip(b["uid"].tolist(), b["nvotes"].tolist(), b["cs"].tolist()) if u in a_attr)
 
 
 def test_notes_and_leaderboards(snapshot):
     _, summary, db = snapshot
     rows = [r for (d,) in db.execute("SELECT data FROM vn_notes") for r in json.loads(d)]
-    assert rows and all(len(r[5]) >= 20 for r in rows)
+    assert rows and all(len(r[5]) >= 20 and len(r) == 10 for r in rows)
+    assert all(0 <= r[7] < 64 and r[8] >= 0 and (r[9] is None or 0 <= r[9] <= 100) for r in rows)
+    assert any(r[7] for r in rows) and any(r[9] is not None for r in rows)
+    assert all(r[9] is None for r in rows if r[3] == 0)  # no vote, no percentile
     users = [r for (d,) in db.execute("SELECT data FROM user_notes") for r in json.loads(d)]
-    assert 0 < len(users) <= len(rows)
+    assert 0 < len(users) <= len(rows) and all(len(r) == 7 for r in users)
     lb = json.loads(db.execute("SELECT value FROM meta WHERE key='leaderboards'").fetchone()[0])
     assert lb["most_votes"][0][2] >= lb["most_votes"][-1][2]
     assert lb["highest_mean"][0][2] >= lb["lowest_mean"][0][2]

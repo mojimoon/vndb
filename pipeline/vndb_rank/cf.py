@@ -10,6 +10,10 @@
 * Similar VNs ("people who liked this also liked"): the same centered cosine
   between VN columns.
 
+Similar users carry a head-to-head of the two users' votes on their common
+titles: [uid, name, similarity, common, higher, equal, lower, their ranked votes]
+("higher" = this user voted higher).
+
 Everything is computed in blocks so memory stays at a few GB for ~50k users
 and ~8k VNs.
 """
@@ -69,6 +73,15 @@ def _top_k(mat: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
     return np.take_along_axis(part, order, axis=1), np.take_along_axis(vals, order, axis=1)
 
 
+def _head_to_head(V: sp.csr_matrix, a: int, b: int) -> list[int]:
+    """[a higher, equal, b higher] over the titles both users voted on."""
+    ia, va = V.indices[V.indptr[a]:V.indptr[a + 1]], V.data[V.indptr[a]:V.indptr[a + 1]]
+    ib, vb = V.indices[V.indptr[b]:V.indptr[b + 1]], V.data[V.indptr[b]:V.indptr[b + 1]]
+    _, pa, pb = np.intersect1d(ia, ib, assume_unique=True, return_indices=True)
+    x, y = va[pa], vb[pb]
+    return [int((x > y).sum()), int((x == y).sum()), int((x < y).sum())]
+
+
 @dataclass
 class UserModel:
     uids: np.ndarray        # users with >= min_user_votes ranked votes
@@ -92,6 +105,8 @@ def build_users(votes: Votes, n_items: int, names: dict[int, str], cfg: CFConfig
 
     mean = np.bincount(rows, weights=v, minlength=U) / np.bincount(rows, minlength=U)
     c = v - mean[rows]
+    V = sp.csr_matrix((votes.vote[mask].astype(np.int16), (rows, cols)), shape=(U, n_items))
+    V.sort_indices()
     R = sp.csr_matrix((c.astype(np.float32), (rows, cols)), shape=(U, n_items))
     B = sp.csr_matrix((np.ones(len(rows), np.float32), (rows, cols)), shape=(U, n_items))
     norm = np.sqrt(np.asarray(R.multiply(R).sum(axis=1)).ravel())
@@ -144,7 +159,8 @@ def build_users(votes: Votes, n_items: int, names: dict[int, str], cfg: CFConfig
             order = np.argsort(item_idx)
             raw = np.rint((R.data[lo:hi][order] + mean[u]) * 10).astype(np.int64)
             sims = [
-                [int(uids[cand[j]]), names.get(int(uids[cand[j]]), ""), round(float(s), 4), int(common[r, j])]
+                [int(uids[cand[j]]), names.get(int(uids[cand[j]]), ""), round(float(s), 4), int(common[r, j]),
+                 *_head_to_head(V, u, int(cand[j])), int(ucount[cand[j]])]
                 for j, s in zip(nb_idx[r, : cfg.similar_users], nb_sim[r, : cfg.similar_users]) if s > 0
             ]
             recs = [

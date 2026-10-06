@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { useI18n } from "../lib/i18n";
 
 /** Width of the chart's container in CSS pixels, so SVG text keeps its size
  *  instead of scaling with the card. */
@@ -42,7 +43,7 @@ function YAxis({ ticks, y, x, format = compact, width }: { ticks: number[]; y: (
       {ticks.map((v) => (
         <g key={v}>
           <line x1={x} x2={width} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeWidth={1} />
-          <text x={x - 6} y={y(v) + 4} textAnchor="end" fontSize={11} fill="var(--text-3)">
+          <text x={x - 6} y={y(v) + 4} textAnchor="end" fontSize={11} fill="var(--text-2)">
             {format(v)}
           </text>
         </g>
@@ -147,7 +148,7 @@ export function BarChart({
                 opacity={hover === null || hover === i ? 1 : 0.55}
               />
               {i % every === 0 && (
-                <text x={x + w / 2} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-3)">
+                <text x={x + w / 2} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-2)">
                   {d.x}
                 </text>
               )}
@@ -184,47 +185,64 @@ export function cumulativeLine(values: number[], name: string): SecondaryLine {
   };
 }
 
-/** Sequential-scale 10x10 matrix (e.g. joint vote distribution of two titles). */
+/** 10x10 matrix of counts over two same-scale axes (e.g. the joint vote
+ *  distribution of two titles). Cells are tinted by which side of the diagonal
+ *  they fall on: above = the y quantity is higher (secondary color), below =
+ *  the x quantity is higher (accent), on it = equal (neutral); the shade grows
+ *  with the cell's share. */
 export function Matrix({
   data,
   labels,
   xName,
   yName,
   label,
-  normalize = "all",
+  xLabels,
+  yLabels,
 }: {
   data: number[][]; // data[row = y][col = x]
   labels: string[];
   xName: string;
   yName: string;
   label: string;
-  normalize?: "all" | "row";
+  xLabels?: string[];
+  yLabels?: string[];
 }) {
+  const { t } = useI18n();
   const [hover, setHover] = useState<[number, number] | null>(null);
   const total = data.flat().reduce((a, b) => a + b, 0) || 1;
-  const rowSum = data.map((r) => r.reduce((a, b) => a + b, 0) || 1);
-  const share = (r: number, c: number) => data[r][c] / (normalize === "row" ? rowSum[r] : total);
+  const share = (r: number, c: number) => data[r][c] / total;
   const max = Math.max(1e-9, ...data.flatMap((row, r) => row.map((_, c) => share(r, c))));
-  const n = labels.length;
+  const xl = xLabels ?? labels;
+  const yl = yLabels ?? labels;
+  const n = yl.length;
+  const hue = (r: number, c: number) => (r > c ? "var(--series-2)" : r < c ? "var(--accent)" : "var(--diag)");
+  const side = (() => {
+    let above = 0;
+    let below = 0;
+    let diag = 0;
+    data.forEach((row, r) => row.forEach((v, c) => (r > c ? (above += v) : r < c ? (below += v) : (diag += v))));
+    return { above: above / total, below: below / total, diag: diag / total };
+  })();
   return (
     <figure>
-      <div className="mb-1 h-5 text-xs text-ink-2 tabular" aria-live="polite">
+      <div className="mb-1 min-h-5 text-xs text-ink-2 tabular" aria-live="polite">
         {hover && (
           <>
-            {yName} <span className="font-medium text-ink">{labels[hover[0]]}</span> · {xName} <span className="font-medium text-ink">{labels[hover[1]]}</span>:{" "}
-            {data[hover[0]][hover[1]].toLocaleString()} ({(share(hover[0], hover[1]) * 100).toFixed(1)}%)
+            {xName} <span className="font-medium text-ink">{xl[hover[1]]}</span> · {yName} <span className="font-medium text-ink">{yl[hover[0]]}</span>:{" "}
+            <span className="font-medium text-ink">{data[hover[0]][hover[1]].toLocaleString()}</span> ({(share(hover[0], hover[1]) * 100).toFixed(1)}%)
           </>
         )}
       </div>
-      <div className="overflow-x-auto">
-        <table className="mx-auto border-separate border-spacing-[2px] text-[10px]" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
+      <div className="flex items-center justify-center gap-1 overflow-x-auto">
+        <div className="shrink-0 text-xs font-medium text-ink-2 [writing-mode:vertical-rl] rotate-180">{yName} →</div>
+        <table className="border-separate border-spacing-[2px] text-[10px]" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
           <tbody>
             {Array.from({ length: n }, (_, k) => n - 1 - k).map((r) => (
               <tr key={r}>
-                <th scope="row" className="pr-1 text-right font-normal text-ink-3 tabular">
-                  {labels[r]}
+                <th scope="row" className="pr-1 text-right font-normal text-ink-2 tabular">
+                  {yl[r]}
                 </th>
-                {labels.map((_, c) => {
+                {xl.map((_, c) => {
                   const f = share(r, c) / max;
                   return (
                     <td
@@ -232,8 +250,8 @@ export function Matrix({
                       onMouseEnter={() => setHover([r, c])}
                       className={`h-7 w-8 min-w-7 rounded-[3px] text-center tabular ${hover && hover[0] === r && hover[1] === c ? "outline-2 outline-ink" : ""}`}
                       style={{
-                        background: data[r][c] ? `color-mix(in oklab, var(--seq-1) ${Math.round(f * 100)}%, var(--seq-0))` : "var(--surface-2)",
-                        color: f > 0.55 ? "var(--surface)" : "var(--text-2)",
+                        background: data[r][c] ? `color-mix(in oklab, ${hue(r, c)} ${Math.round(12 + f * 88)}%, var(--surface-2))` : "var(--surface-2)",
+                        color: f > 0.5 ? "#fff" : "var(--text)",
                       }}
                     >
                       {data[r][c] ? data[r][c] : ""}
@@ -244,8 +262,8 @@ export function Matrix({
             ))}
             <tr>
               <th />
-              {labels.map((l) => (
-                <th key={l} className="pt-1 font-normal text-ink-3 tabular">
+              {xl.map((l) => (
+                <th key={l} className="pt-1 font-normal text-ink-2 tabular">
                   {l}
                 </th>
               ))}
@@ -253,9 +271,20 @@ export function Matrix({
           </tbody>
         </table>
       </div>
-      <div className="mt-1 flex justify-between text-xs text-ink-3">
-        <span>↑ {yName}</span>
-        <span>{xName} →</span>
+      <div className="mt-1 text-center text-xs font-medium text-ink-2">{xName} →</div>
+      <div className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-ink-2">
+        {(
+          [
+            ["var(--series-2)", t("chart.above", { y: yName }), side.above],
+            ["var(--diag)", t("chart.diag"), side.diag],
+            ["var(--accent)", t("chart.below", { x: xName }), side.below],
+          ] as const
+        ).map(([color, text, v]) => (
+          <span key={text} className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+            {text} <span className="tabular font-medium text-ink">{(v * 100).toFixed(0)}%</span>
+          </span>
+        ))}
       </div>
     </figure>
   );
@@ -306,7 +335,7 @@ export function LineChart({
             <rect x={padL + i * step} y={0} width={step} height={H} fill="transparent" />
             <circle cx={px(i)} cy={py(d.y)} r={hover === i ? 5 : 3} fill="var(--accent)" stroke="var(--surface)" strokeWidth={2} />
             {i % every === 0 && (
-              <text x={px(i)} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-3)">
+              <text x={px(i)} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-2)">
                 {d.x}
               </text>
             )}
@@ -379,7 +408,7 @@ export function RankLines({
         {ticks.map((r) => (
           <g key={r}>
             <line x1={padL} x2={W} y1={py(r)} y2={py(r)} stroke="var(--border)" strokeWidth={1} />
-            <text x={padL - 6} y={py(r) + 4} textAnchor="end" fontSize={11} fill="var(--text-3)">
+            <text x={padL - 6} y={py(r) + 4} textAnchor="end" fontSize={11} fill="var(--text-2)">
               #{r}
             </text>
           </g>
@@ -399,10 +428,10 @@ export function RankLines({
           const right = i === points.length - 1 ? W : (px(p.x) + px(points[i + 1].x)) / 2;
           return <rect key={p.x} x={left} y={0} width={Math.max(1, right - left)} height={H} fill="transparent" onMouseEnter={() => setHover(i)} />;
         })}
-        <text x={padL} y={H - 6} fontSize={11} fill="var(--text-3)">
+        <text x={padL} y={H - 6} fontSize={11} fill="var(--text-2)">
           {formatX(points[0].x)}
         </text>
-        <text x={W} y={H - 6} textAnchor="end" fontSize={11} fill="var(--text-3)">
+        <text x={W} y={H - 6} textAnchor="end" fontSize={11} fill="var(--text-2)">
           {formatX(points[points.length - 1].x)}
         </text>
       </svg>
@@ -467,7 +496,7 @@ export function PairedBars({ x, a, b, names, label }: { x: string[]; a: number[]
               <rect x={padL + i * gw} y={0} width={gw} height={H} fill="transparent" />
               <rect x={gx} y={H - padB - ha} width={bw} height={ha} rx={3} fill={SERIES[0]} />
               <rect x={gx + bw + 2} y={H - padB - hb} width={bw} height={hb} rx={3} fill={SERIES[1]} />
-              <text x={padL + i * gw + gw / 2} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-3)">
+              <text x={padL + i * gw + gw / 2} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-2)">
                 {label}
               </text>
             </g>
@@ -513,8 +542,8 @@ export function Scatter({
           <g key={v}>
             <line x1={p(v)} x2={p(v)} y1={top} y2={S - pad} stroke="var(--border)" />
             <line x1={pad} x2={S - 8} y1={q(v)} y2={q(v)} stroke="var(--border)" />
-            <text x={p(v)} y={S - pad + 14} textAnchor="middle" fontSize={10} fill="var(--text-3)">{v}</text>
-            <text x={pad - 6} y={q(v) + 3} textAnchor="end" fontSize={10} fill="var(--text-3)">{v}</text>
+            <text x={p(v)} y={S - pad + 14} textAnchor="middle" fontSize={10} fill="var(--text-2)">{v}</text>
+            <text x={pad - 6} y={q(v) + 3} textAnchor="end" fontSize={10} fill="var(--text-2)">{v}</text>
           </g>
         ))}
         <line x1={p(1)} y1={q(1)} x2={p(10)} y2={q(10)} stroke="var(--text-3)" strokeDasharray="3 3" />

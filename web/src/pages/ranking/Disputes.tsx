@@ -28,12 +28,9 @@ export default function Disputes() {
 
 function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
   const { t } = useI18n();
-  const [visible, more] = useShowMore(rows, 20, 30);
-  return (
-    <section className="rounded-lg border border-line bg-surface">
-      <h2 className="border-b border-line px-4 py-2.5 text-sm font-semibold">{title}</h2>
+  const table = (items: Row[]) => (
       <table className="w-full text-sm">
-        <thead className="text-left text-xs text-ink-3">
+        <thead className="text-left text-xs text-ink-2">
           <tr>
             <th className="w-14 px-3 py-1.5 text-right font-medium">{t("rank.col.rank")}</th>
             <th className="w-14 px-3 py-1.5 text-right font-medium">VNDB</th>
@@ -41,7 +38,7 @@ function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
           </tr>
         </thead>
         <tbody>
-          {visible.map((r) => (
+          {items.map((r) => (
             <tr key={r.id} className="border-t border-line">
               <td className="tabular px-3 py-1.5 text-right font-semibold">{r.rank}</td>
               <td className="tabular px-3 py-1.5 text-right text-ink-2">{r.vndb_rank}</td>
@@ -52,6 +49,12 @@ function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
           ))}
         </tbody>
       </table>
+  );
+  const [visible, more] = useShowMore(rows, 20, title, table);
+  return (
+    <section className="rounded-lg border border-line bg-surface">
+      <h2 className="border-b border-line px-4 py-2.5 text-sm font-semibold">{title}</h2>
+      {table(visible)}
       <div className="pb-2">{more}</div>
     </section>
   );

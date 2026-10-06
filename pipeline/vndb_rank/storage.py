@@ -1,9 +1,10 @@
 """Compact encodings for the bulky per-snapshot data.
 
-* Voter shards: every VN's voters as (uid, vote, sample-percentile decile),
-  so the worker can compute exact head-to-head counts and joint vote
-  distributions for any two VNs. Binary parts are at most ``PART_BYTES``
-  (D1 caps a statement at 100 KB and a BLOB literal is hex).
+* Voter shards: every VN's voters with their vote, sample percentile, list
+  labels and a few user-level attributes (VOTER_DTYPE), so the worker can
+  compute exact head-to-head counts and joint vote distributions for any two
+  VNs, and the frontend can filter a VN's voters. Binary parts are at most
+  ``PART_BYTES`` (D1 caps a statement at 100 KB and a BLOB literal is hex).
 * User shards: users grouped by ``uid % USER_SHARDS``; one JSON object per part.
 * Name index: lowercased username -> uid, grouped by FNV-1a hash.
 * Rank history: [[day, rank_a, rank_b], ...] per VN, daily for 90 days, then
@@ -28,7 +29,19 @@ NAME_SHARDS = 64
 VOTER_SHARDS = 1024        # vn idx % VOTER_SHARDS
 VN_NOTE_SHARDS = 512       # vn idx % VN_NOTE_SHARDS
 USER_NOTE_SHARDS = 1024    # uid % USER_NOTE_SHARDS
-VOTER_DTYPE = np.dtype([("uid", "<u4"), ("vote", "u1"), ("spd", "u1")])
+# 13 bytes per vote; the worker (readVoters) mirrors this layout.
+VOTER_DTYPE = np.dtype([
+    ("uid", "<u4"),
+    ("vote", "u1"),     # 10..100
+    ("sp", "u1"),       # sample percentile x 200, 0..199 (decile = sp // 20)
+    ("labels", "u1"),   # list labels bit mask (bit k-1 = label k: playing, finished, stalled, dropped, wishlist, blacklist)
+    ("year", "u1"),     # vote year - 1990, 0 = unknown
+    ("nvotes", "<u2"),  # the user's votes on any VN (saturating)
+    ("umean", "u1"),    # the user's mean ranked vote, 10..100
+    ("cv", "i1"),       # Pearson r x 100 of the user's votes vs VNDB ratings, -128 = n/a
+    ("cs", "i1"),       # same vs the default ranking's percentile
+])
+VOTER_YEAR_BASE = 1990
 EPOCH = dt.date(2000, 1, 1)
 
 
@@ -103,15 +116,27 @@ def text_parts(text: str) -> Iterator[str]:
         yield piece
 
 
-def voter_shards(vidx: np.ndarray, uid: np.ndarray, vote: np.ndarray, spd: np.ndarray) -> Iterator[tuple[int, int, bytes]]:
+def voter_records(uid: np.ndarray, vote: np.ndarray, sp: np.ndarray, labels: np.ndarray, year: np.ndarray, attrs: dict) -> np.ndarray:
+    """Pack per-vote fields (aligned arrays) into VOTER_DTYPE records."""
+    recs = np.zeros(len(uid), dtype=VOTER_DTYPE)
+    recs["uid"], recs["vote"] = uid, vote
+    recs["sp"] = np.clip(np.floor(np.asarray(sp) * 200), 0, 199)
+    recs["labels"] = labels if labels is not None else 0
+    y = np.asarray(year, dtype=np.int64)
+    recs["year"] = np.where(y > VOTER_YEAR_BASE, np.minimum(y - VOTER_YEAR_BASE, 255), 0)
+    recs["nvotes"], recs["umean"] = attrs["nvotes"], attrs["umean"]
+    recs["cv"], recs["cs"] = attrs["corr"][0], attrs["corr"][1]
+    return recs
+
+
+def voter_shards(vidx: np.ndarray, recs: np.ndarray) -> Iterator[tuple[int, int, bytes]]:
     """Per-VN voter lists for exact joint distributions of any two VNs.
 
     Shard = vn idx % VOTER_SHARDS. A part is a sequence of segments
-    ``idx:u16 n:u32`` followed by n records ``uid:u32 vote:u8 spd:u8`` sorted by
-    uid; one VN may continue in several segments across parts."""
-    order = np.lexsort((uid, vidx))
-    recs = np.empty(len(order), dtype=VOTER_DTYPE)
-    recs["uid"], recs["vote"], recs["spd"] = uid[order], vote[order], spd[order]
+    ``idx:u16 n:u32`` followed by n VOTER_DTYPE records sorted by uid; one VN
+    may continue in several segments across parts."""
+    order = np.lexsort((recs["uid"], vidx))
+    recs = recs[order]
     v = vidx[order]
     starts = np.flatnonzero(np.r_[True, np.diff(v) != 0])
     ends = np.r_[starts[1:], len(v)]

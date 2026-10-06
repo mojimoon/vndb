@@ -58,9 +58,9 @@ Numbers from the 2026-10-06 dump:
 | `vn` | 7,945 | one VN: display fields + JSON columns `ranks`, `analysis`, `neighbors`, `similar`, `relations`, `history` |
 | `producer` | 2,410 | one developer |
 | `doc` | ~190 | a prebuilt API response split into ≤ 80 KB parts: `catalogue` (columnar) and `ranks:<method>` |
-| `vn_voters` | ~1.3k | voters of the VNs with `idx % 1024 == shard`: segments `(idx u16, n u32)` + n × `(uid u32, vote u8, sp decile u8)`, sorted by uid |
-| `vn_notes` | ~700 | JSON `[[idx, uid, name, vote, date, text, has_page], ...]` for `idx % 512 == shard`, newest first |
-| `user_notes` | ~1.3k | JSON `[[uid, idx, vote, date, text], ...]` for `uid % 1024 == shard` |
+| `vn_voters` | ~1.6k | voters of the VNs with `idx % 1024 == shard`: segments `(idx u16, n u32)` + n × 13-byte records sorted by uid: `uid u32, vote u8, sample percentile ×200 u8, list labels u8, year−1990 u8, the user's vote count u16, the user's mean vote u8, r vs VNDB ×100 i8, r vs SciRanking ×100 i8` (`storage.VOTER_DTYPE`) |
+| `vn_notes` | ~700 | JSON `[[idx, uid, name, vote, date, text, has_page, labels, user_votes, sp%], ...]` for `idx % 512 == shard`, newest first |
+| `user_notes` | ~1.3k | JSON `[[uid, idx, vote, date, text, labels, sp%], ...]` for `uid % 1024 == shard` |
 | `user_block` | 2,048 | JSON `{uid: {name, votes, similar, recs}}` for `uid % 2048 == shard`; votes are base64 `(vn idx u16, vote u8)` |
 | `user_name` | 64 | JSON `{lower(username): uid}` for `fnv1a(name) % 64 == shard` |
 | `meta` | 5 | `snapshot`, `info`, `stats`, `kendall`, `leaderboards` |
@@ -91,7 +91,20 @@ The dump carries the free-text notes of public user lists. On ranked VNs there
 are 160k non-empty notes (16.9 MB); the 105k with at least 20 characters are
 kept (capped at 3,000 characters each). They are stored twice, by VN and by
 user, which costs ~33 MB and ~2k row writes per day, and are only fetched when
-a notes tab is opened. Pass `--skip-notes` to the pipeline to leave them out.
+a reviews tab is opened. The Worker sorts (time, rating, sample percentile)
+and filters (list labels, the author's vote count) a VN's reviews before
+paging, so every query costs the same shard read and is cached on its own.
+Pass `--skip-notes` to the pipeline to leave them out.
+
+### Voter filters
+
+The ratings tab can recompute a VN's analysis over a subset of its voters
+(list status, the voter's vote count, the voter's correlation with VNDB
+ratings or SciRanking). `/api/voters/:idx` returns the VN's voter records
+without uids (9 bytes each, ~20 KB for a typical VN) from the same shard the
+joint endpoint reads; the browser does the filtering. The user-level fields
+are copied onto every vote (1.9M ranked votes × 13 bytes ≈ 24 MB) so the
+request never has to look users up.
 
 ## Refresh: build, then swap
 
@@ -103,7 +116,10 @@ readers see either the old or the new data, and schema changes ship with the
 data (there are no separate migrations).
 
 The Worker includes the snapshot id in every edge-cache key, so a refresh
-simply starts using new cache entries.
+simply starts using new cache entries. When a response format changes, bump
+`API_VERSION` in both `web/worker/index.ts` and `web/src/lib/api.ts`: it is
+part of every request URL and every edge-cache key, so neither browsers nor
+the edge can hand an old-format response to new code.
 
 ## Free-tier budget (Workers Free: 100k rows written, 5M rows read per day, 500 MB per DB)
 
@@ -112,7 +128,7 @@ simply starts using new cache entries.
   snapshot, and in the browser for 5 minutes):
   * `/api/meta`: 5. `/api/catalogue`: ~25. `/api/ranks?m=`: 2-3.
   * `/api/vn/:id`: 1. `/api/user/:uid`: 1-2. `/api/user-lookup`: 1.
-  * `/api/joint/:a/:b`: 1-10 (two voter shards).
+  * `/api/joint/:a/:b`: 1-10 (two voter shards). `/api/voters/:idx`: 1-5.
   * `/api/notes/vn/:idx`: 1-15. `/api/user/:uid/notes`: 1-2.
   * The snapshot id is memoized in each isolate for 60 s (2 rows).
   * The app requests `/api/meta` and `/api/catalogue` once at startup; every
@@ -131,7 +147,10 @@ Edge caching via the Cache API only works on a custom domain, not on
   unvoted VNs: `mean + Σ s·dev / Σ s`, damped by `support / (support + 3)`,
   capped at 10, and requiring >= 3 supporting neighbors.
 * Similar VNs use the same centered cosine between VN columns
-  (`common / (common + 20)`, >= 10 common voters).
+  (`common / (common + 20)`, >= 10 common voters), and carry their
+  head-to-head counts from the pair table.
+* Similar users carry a head-to-head over their common titles (who voted
+  higher, equal) and the other user's ranked vote count.
 * Computed in blocks of 2,000 users with dense candidate matrices; ~80 s on
   a GitHub runner.
 
