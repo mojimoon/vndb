@@ -29,3 +29,5 @@ web/node_modules/
 web/dist/
 web/.wrangler/
 web/.dev.vars*
+web/worker/worker-configuration.d.ts
+*.tsbuildinfo
