@@ -3,6 +3,10 @@ import { Hono, type Context } from "hono";
 // Storage formats mirror pipeline/vndb_rank/storage.py and export.py.
 const USER_SHARDS = 2048;
 const NAME_SHARDS = 64;
+const VOTER_SHARDS = 1024;
+const VN_NOTE_SHARDS = 512;
+const USER_NOTE_SHARDS = 1024;
+const NOTES_PAGE = 30;
 
 interface Info {
   methods: string[];
@@ -22,8 +26,8 @@ type AppContext = Context<AppEnv>;
 const app = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------------------
-// Snapshot id + info are read on almost every request, so keep them in isolate
-// memory for a minute (1-2 D1 rows read per isolate per minute).
+// Snapshot id + info are needed by every request, so keep them in isolate
+// memory for a minute (2 D1 rows read per isolate per minute).
 let metaMemo: Meta | null = null;
 const META_TTL_MS = 60_000;
 
@@ -47,8 +51,9 @@ async function currentMeta(db: D1Database): Promise<Meta | null> {
 
 // ---------------------------------------------------------------------------
 // Edge cache: responses are immutable per snapshot, so the snapshot id is part
-// of the cache key and a refresh simply starts using new keys.
-async function cachedJson(c: AppContext, build: () => Promise<unknown | null>) {
+// of the cache key and a refresh simply starts using new keys. `build` returns
+// a JSON string (passed through as is), an object, or null for 404.
+async function cached(c: AppContext, build: () => Promise<string | object | null>) {
   const snapshot = c.get("meta").snapshot;
   const url = new URL(c.req.url);
   url.searchParams.set("__snapshot", snapshot);
@@ -59,7 +64,7 @@ async function cachedJson(c: AppContext, build: () => Promise<unknown | null>) {
 
   const body = await build();
   if (body === null) return c.json({ error: "not found" }, 404);
-  const res = new Response(JSON.stringify(body), {
+  const res = new Response(typeof body === "string" ? body : JSON.stringify(body), {
     headers: {
       "content-type": "application/json; charset=utf-8",
       // Browsers revalidate after 5 minutes; the edge keeps it for a week.
@@ -92,6 +97,50 @@ function decodeVotes(b64: string): [number, number][] {
   return out;
 }
 
+/** All parts of one row group, in order (1 row read per part). */
+async function parts<T = string>(db: D1Database, table: string, keyCol: string, key: string | number): Promise<T[]> {
+  const { results } = await db.prepare(`SELECT data FROM ${table} WHERE ${keyCol} = ? ORDER BY part`).bind(key).all<{ data: T }>();
+  return results.map((r) => r.data);
+}
+
+const doc = async (db: D1Database, key: string) => {
+  const p = await parts(db, "doc", "key", key);
+  return p.length ? p.join("") : null;
+};
+
+interface Voter {
+  uid: Uint32Array;
+  vote: Uint8Array;
+  spd: Uint8Array;
+}
+
+/** Voters of one VN from its shard (format: storage.voter_shards). */
+function readVoters(blobs: unknown[], idx: number): Voter {
+  const uid: number[] = [];
+  const vote: number[] = [];
+  const spd: number[] = [];
+  for (const blob of blobs) {
+    const b = toBytes(blob);
+    const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    let pos = 0;
+    while (pos + 6 <= b.byteLength) {
+      const i = view.getUint16(pos, true);
+      const n = view.getUint32(pos + 2, true);
+      pos += 6;
+      if (i === idx) {
+        for (let k = 0; k < n; k++) {
+          const o = pos + k * 6;
+          uid.push(view.getUint32(o, true));
+          vote.push(b[o + 4]);
+          spd.push(b[o + 5]);
+        }
+      }
+      pos += n * 6;
+    }
+  }
+  return { uid: Uint32Array.from(uid), vote: Uint8Array.from(vote), spd: Uint8Array.from(spd) };
+}
+
 const isMethod = (m: string, info: Info) => info.methods.includes(m);
 
 app.onError((err, c) => {
@@ -106,132 +155,108 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
-// GET /api/meta -> snapshot, method list, statistics, method agreement matrix
+// GET /api/meta -> snapshot, method list, statistics, agreement matrix, leaderboards
 app.get("/api/meta", (c) =>
-  cachedJson(c, async () => {
+  cached(c, async () => {
     const { results } = await c.env.DB.prepare("SELECT key, value FROM meta").all<{ key: string; value: string }>();
-    return Object.fromEntries(results.map((r) => [r.key, JSON.parse(r.value)]));
+    return `{${results.map((r) => `${JSON.stringify(r.key)}:${r.value}`).join(",")}}`;
   }),
 );
 
-// GET /api/catalogue -> every ranked VN's display fields (~N rows read per cache miss).
-app.get("/api/catalogue", (c) =>
-  cachedJson(c, async () => {
-    const { results } = await c.env.DB.prepare(
-      `SELECT v.id, v.idx, v.title, v.latin, v.title_ja, v.title_zh, v.title_en, v.olang, v.released,
-              v.dev_id, p.name AS dev, p.latin AS dev_latin, v.votes, v.rating, v.length, v.trend,
-              json_extract(v.ranks, '$.vndb[0]') AS vndb_rank, v.search
-         FROM vn v LEFT JOIN producer p ON p.id = v.dev_id
-        ORDER BY v.idx`,
-    ).all();
-    return { items: results };
-  }),
-);
+// GET /api/catalogue -> {columns, rows}: display fields of every ranked VN (prebuilt, ~25 rows read).
+app.get("/api/catalogue", (c) => cached(c, () => doc(c.env.DB, "catalogue")));
 
-// GET /api/ranks?m=<method> -> [[id, rank, score], ...] sorted by rank.
+// GET /api/ranks?m=<method> -> {method, ranks: [[id, rank, score], ...]} (prebuilt).
 app.get("/api/ranks", async (c) => {
   const m = c.get("meta");
   const method = c.req.query("m") ?? m.info.default_method;
   if (!isMethod(method, m.info)) return c.json({ error: "unknown method" }, 400);
-  return cachedJson(c, async () => {
-    const rows = await c.env.DB.prepare(
-      `SELECT id, json_extract(ranks, ?1 || '[0]') AS r, json_extract(ranks, ?1 || '[1]') AS s
-         FROM vn ORDER BY r, id`,
-    )
-      .bind(`$.${method}`)
-      .raw<[number, number, number | null]>();
-    return { method, ranks: rows };
-  });
+  return cached(c, () => doc(c.env.DB, `ranks:${method}`));
 });
 
-// GET /api/vn/:id -> one VN with ranks, analysis, history, head-to-head, similar VNs.
+// GET /api/vn/:id -> one VN row (titles of related VNs come from the catalogue). 1 row read.
 app.get("/api/vn/:id{[0-9]+}", (c) =>
-  cachedJson(c, async () => {
-    const id = Number(c.req.param("id"));
+  cached(c, async () => {
     const vn = await c.env.DB.prepare(
-      `SELECT v.*, p.name AS dev, p.latin AS dev_latin
-         FROM vn v LEFT JOIN producer p ON p.id = v.dev_id WHERE v.id = ?`,
+      `SELECT id, idx, title, latin, title_ja, title_zh, title_en, olang, released, dev_id, image, image_sexual,
+              length, votes, rating, average, trend, ranks, neighbors, relations, analysis, similar, history
+         FROM vn WHERE id = ?`,
     )
-      .bind(id)
+      .bind(Number(c.req.param("id")))
       .first<Record<string, unknown>>();
     if (!vn) return null;
-
-    const json = (k: string) => JSON.parse(vn[k] as string);
-    const neighbors = json("neighbors") as [number, number, number, number][];
-    const relations = json("relations") as [number, string][];
-    const similar = json("similar") as [number, number, number][];
-    const ids = [...new Set([...neighbors.map((n) => n[0]), ...relations.map((r) => r[0]), ...similar.map((s) => s[0])])];
-    const { results: others } = await c.env.DB.prepare(
-      `SELECT id, title, latin, title_ja, title_zh, title_en, released, votes, rating,
-              json_extract(ranks, ?2 || '[0]') AS rank
-         FROM vn WHERE id IN (SELECT value FROM json_each(?1))`,
-    )
-      .bind(JSON.stringify(ids), `$.${c.get("meta").info.default_method}`)
-      .all();
-
-    const { search: _s, ...rest } = vn;
-    return {
-      ...rest,
-      ranks: json("ranks"),
-      analysis: json("analysis"),
-      history: json("history"),
-      neighbors: neighbors.map(([vid, wins, losses, common]) => ({ id: vid, wins, losses, common })),
-      relations: relations.map(([vid, relation]) => ({ id: vid, relation })),
-      similar: similar.map(([vid, sim, common]) => ({ id: vid, sim, common })),
-      others,
-    };
+    const raw = new Set(["ranks", "neighbors", "relations", "analysis", "similar", "history"]);
+    // JSON columns are spliced in verbatim instead of parsed and re-serialized.
+    return `{${Object.entries(vn)
+      .map(([k, v]) => `${JSON.stringify(k)}:${raw.has(k) ? v : JSON.stringify(v)}`)
+      .join(",")}}`;
   }),
 );
 
-// GET /api/pair/:a/:b -> head-to-head of any two ranked VNs (from the pair blocks).
-app.get("/api/pair/:a{[0-9]+}/:b{[0-9]+}", (c) =>
-  cachedJson(c, async () => {
+// GET /api/joint/:a/:b (VN idx) -> exact head-to-head and 10x10 joint distributions of
+// raw votes and sample-percentile deciles among the users who voted on both.
+app.get("/api/joint/:a{[0-9]+}/:b{[0-9]+}", (c) =>
+  cached(c, async () => {
     const a = Number(c.req.param("a"));
     const b = Number(c.req.param("b"));
     if (a === b) return null;
-    const { results } = await c.env.DB.prepare("SELECT id, idx FROM vn WHERE id IN (?, ?)").bind(a, b).all<{ id: number; idx: number }>();
-    const idx = new Map(results.map((r) => [r.id, r.idx]));
-    if (!idx.has(a) || !idx.has(b)) return null;
-    const ia = idx.get(a)!;
-    const ib = idx.get(b)!;
-    const [lo, hi] = ia < ib ? [ia, ib] : [ib, ia];
-    const { results: parts } = await c.env.DB.prepare("SELECT data FROM pair_block WHERE a = ? ORDER BY part").bind(lo).all<{ data: unknown }>();
-    for (const part of parts) {
-      const bytes = toBytes(part.data);
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      let l = 0;
-      let r = bytes.byteLength / 8 - 1;
-      if (r < 0 || view.getUint16(r * 8, true) < hi) continue;
-      while (l <= r) {
-        const mid = (l + r) >> 1;
-        const key = view.getUint16(mid * 8, true);
-        if (key === hi) {
-          const pv = view.getUint16(mid * 8 + 2, true);
-          const nv = view.getUint16(mid * 8 + 4, true);
-          const tv = view.getUint16(mid * 8 + 6, true);
-          const [wins, losses] = ia < ib ? [pv, nv] : [nv, pv];
-          return { a, b, wins, losses, common: tv };
-        }
-        if (key < hi) l = mid + 1;
-        else r = mid - 1;
+    const sa = a % VOTER_SHARDS;
+    const sb = b % VOTER_SHARDS;
+    const blobsA = await parts<unknown>(c.env.DB, "vn_voters", "shard", sa);
+    const blobsB = sa === sb ? blobsA : await parts<unknown>(c.env.DB, "vn_voters", "shard", sb);
+    const va = readVoters(blobsA, a);
+    const vb = readVoters(blobsB, b);
+    if (!va.uid.length || !vb.uid.length) return null;
+    const raw = Array.from({ length: 10 }, () => Array(10).fill(0));
+    const sp = Array.from({ length: 10 }, () => Array(10).fill(0));
+    let wins = 0;
+    let losses = 0;
+    let common = 0;
+    // Both lists are sorted by uid: merge-intersect.
+    for (let i = 0, j = 0; i < va.uid.length && j < vb.uid.length; ) {
+      if (va.uid[i] < vb.uid[j]) i++;
+      else if (va.uid[i] > vb.uid[j]) j++;
+      else {
+        const x = va.vote[i];
+        const y = vb.vote[j];
+        raw[Math.min(9, Math.max(0, Math.floor(x / 10) - 1))][Math.min(9, Math.max(0, Math.floor(y / 10) - 1))]++;
+        sp[va.spd[i]][vb.spd[j]]++;
+        if (x > y) wins++;
+        else if (x < y) losses++;
+        common++;
+        i++;
+        j++;
       }
-      break;
     }
-    // Fewer than min_common_vote users voted on both.
-    return { a, b, wins: 0, losses: 0, common: 0, below_threshold: true };
+    return { a, b, wins, losses, common, raw, sp };
+  }),
+);
+
+// GET /api/notes/vn/:idx?page=N -> notes on one VN, newest first, NOTES_PAGE per page.
+app.get("/api/notes/vn/:idx{[0-9]+}", (c) =>
+  cached(c, async () => {
+    const idx = Number(c.req.param("idx"));
+    const page = Math.max(0, Number(c.req.query("page") ?? 0) || 0);
+    const rows: unknown[][] = [];
+    for (const p of await parts(c.env.DB, "vn_notes", "shard", idx % VN_NOTE_SHARDS)) {
+      for (const r of JSON.parse(p) as unknown[][]) if (r[0] === idx) rows.push(r);
+    }
+    const slice = rows.slice(page * NOTES_PAGE, (page + 1) * NOTES_PAGE);
+    return {
+      total: rows.length,
+      page,
+      pageSize: NOTES_PAGE,
+      notes: slice.map(([, uid, name, vote, date, text, hasPage]) => ({ uid, name, vote, date, text, hasPage })),
+    };
   }),
 );
 
 // GET /api/user/:uid -> votes (as [vn idx, vote]), similar users, recommendations.
 app.get("/api/user/:uid{[0-9]+}", (c) =>
-  cachedJson(c, async () => {
+  cached(c, async () => {
     const uid = Number(c.req.param("uid"));
-    const { results } = await c.env.DB.prepare("SELECT data FROM user_block WHERE shard = ? ORDER BY part")
-      .bind(uid % USER_SHARDS)
-      .all<{ data: string }>();
-    for (const r of results) {
-      const shard = JSON.parse(r.data) as Record<string, { name: string; votes: string; similar: unknown[]; recs: unknown[] }>;
-      const u = shard[String(uid)];
+    for (const p of await parts(c.env.DB, "user_block", "shard", uid % USER_SHARDS)) {
+      const u = (JSON.parse(p) as Record<string, { name: string; votes: string; similar: unknown[]; recs: unknown[] }>)[String(uid)];
       if (u) {
         return {
           uid,
@@ -246,16 +271,25 @@ app.get("/api/user/:uid{[0-9]+}", (c) =>
   }),
 );
 
+// GET /api/user/:uid/notes -> all of the user's notes on ranked VNs.
+app.get("/api/user/:uid{[0-9]+}/notes", (c) =>
+  cached(c, async () => {
+    const uid = Number(c.req.param("uid"));
+    const notes: { idx: unknown; vote: unknown; date: unknown; text: unknown }[] = [];
+    for (const p of await parts(c.env.DB, "user_notes", "shard", uid % USER_NOTE_SHARDS)) {
+      for (const [u, idx, vote, date, text] of JSON.parse(p) as unknown[][]) if (u === uid) notes.push({ idx, vote, date, text });
+    }
+    return { uid, notes };
+  }),
+);
+
 // GET /api/user-lookup?name=<username> -> { uid }
 app.get("/api/user-lookup", (c) =>
-  cachedJson(c, async () => {
+  cached(c, async () => {
     const name = (c.req.query("name") ?? "").trim().toLowerCase();
     if (!name) return null;
-    const { results } = await c.env.DB.prepare("SELECT data FROM user_name WHERE shard = ? ORDER BY part")
-      .bind(fnv1a(name) % NAME_SHARDS)
-      .all<{ data: string }>();
-    for (const r of results) {
-      const uid = (JSON.parse(r.data) as Record<string, number>)[name];
+    for (const p of await parts(c.env.DB, "user_name", "shard", fnv1a(name) % NAME_SHARDS)) {
+      const uid = (JSON.parse(p) as Record<string, number>)[name];
       if (uid) return { uid };
     }
     return null;

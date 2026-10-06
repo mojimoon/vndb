@@ -1,4 +1,4 @@
-import type { TitleFields } from "./api";
+import type { CatalogueItem, TitleFields } from "./api";
 import type { Lang } from "./i18n";
 
 /** Main and secondary title for the current UI language. */
@@ -65,3 +65,25 @@ export function pearson(xs: number[], ys: number[]): number | null {
   }
   return sxx && syy ? sxy / Math.sqrt(sxx * syy) : null;
 }
+
+/** Developer display name for the UI language. */
+export function devName(it: Pick<CatalogueItem, "dev" | "dev_latin">, lang: Lang): string | null {
+  return lang === "zh" ? it.dev ?? it.dev_latin : it.dev_latin ?? it.dev;
+}
+
+/** Sample percentile of each vote within one user's list (same formula as the pipeline). */
+export function samplePercentiles(votes: number[]): number[] {
+  const order = votes.map((v, i) => [v, i] as const).sort((a, b) => a[0] - b[0]);
+  const out = new Array<number>(votes.length);
+  for (let s = 0; s < order.length; ) {
+    let e = s;
+    while (e + 1 < order.length && order[e + 1][0] === order[s][0]) e++;
+    const avgRank = (s + e) / 2 + 1; // 1-based average rank of the tie group
+    for (let k = s; k <= e; k++) out[order[k][1]] = avgRank / (votes.length + 1);
+    s = e + 1;
+  }
+  return out;
+}
+
+export const decileLabels = Array.from({ length: 10 }, (_, i) => `${i * 10}%`);
+export const scoreLabels = Array.from({ length: 10 }, (_, i) => String(i + 1));

@@ -3,6 +3,7 @@ import { useMeta, useRanks } from "../../lib/api";
 import { normalizeQuery } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
 import { VnLink } from "../../components/VnLink";
+import { useShowMore } from "../../components/ShowMore";
 import { useUserContext } from "./UserLayout";
 
 type Key = "vote" | "rating" | "diff" | "rank" | "year";
@@ -27,6 +28,7 @@ export default function UserVotes() {
     return votes.filter((v) => !nq || v.vn.search.includes(nq)).sort((a, b) => key[sort](a) - key[sort](b) || b.vn.votes - a.vn.votes);
   }, [votes, q, sort, ranks]);
 
+  const [visible, more] = useShowMore(rows, 50, 100);
   const Th = ({ k, children }: { k: Key; children: React.ReactNode }) => (
     <th className="px-3 py-2 text-right font-medium" aria-sort={sort === k ? "ascending" : undefined}>
       <button type="button" onClick={() => setSort(k)} className={`hover:text-ink ${sort === k ? "text-ink" : ""}`}>
@@ -51,7 +53,7 @@ export default function UserVotes() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((v) => (
+            {visible.map((v) => (
               <tr key={v.vn.id} className="border-t border-line">
                 <td className="max-w-0 truncate px-3 py-2">
                   <VnLink vn={v.vn} released={v.vn.released} />
@@ -67,6 +69,7 @@ export default function UserVotes() {
           </tbody>
         </table>
       </div>
+      {more}
     </div>
   );
 }

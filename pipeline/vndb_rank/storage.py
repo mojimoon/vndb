@@ -1,9 +1,9 @@
 """Compact encodings for the bulky per-snapshot data.
 
-* Pair blocks: all 7M+ comparable pairs, so any two VNs can be compared. Each
-  pair (a < b) is stored once under ``a`` as 8 little-endian bytes
-  ``b:u16 pv:u16 nv:u16 tv:u16``, sorted by b, split into parts of at most
-  ``PART_BYTES`` (D1 caps a statement at 100 KB and a BLOB literal is hex).
+* Voter shards: every VN's voters as (uid, vote, sample-percentile decile),
+  so the worker can compute exact head-to-head counts and joint vote
+  distributions for any two VNs. Binary parts are at most ``PART_BYTES``
+  (D1 caps a statement at 100 KB and a BLOB literal is hex).
 * User shards: users grouped by ``uid % USER_SHARDS``; one JSON object per part.
 * Name index: lowercased username -> uid, grouped by FNV-1a hash.
 * Rank history: [[day, rank_a, rank_b], ...] per VN, daily for 90 days, then
@@ -20,42 +20,16 @@ from typing import Iterator
 
 import numpy as np
 
-from .pairs import Pairs
 
-PART_BYTES = 40_000
-PART_JSON_CHARS = 80_000
+PART_BYTES = 40_000        # binary parts (hex-encoded in SQL, so ~80 KB per statement)
+PART_TEXT_BYTES = 70_000   # UTF-8 bytes per text part (apostrophes double when quoted for SQL)
 USER_SHARDS = 2048
 NAME_SHARDS = 64
+VOTER_SHARDS = 1024        # vn idx % VOTER_SHARDS
+VN_NOTE_SHARDS = 512       # vn idx % VN_NOTE_SHARDS
+USER_NOTE_SHARDS = 1024    # uid % USER_NOTE_SHARDS
+VOTER_DTYPE = np.dtype([("uid", "<u4"), ("vote", "u1"), ("spd", "u1")])
 EPOCH = dt.date(2000, 1, 1)
-
-
-def pair_blocks(p: Pairs) -> Iterator[tuple[int, int, bytes]]:
-    """Yield (a, part, blob)."""
-    if len(p) and max(p.b.max(), p.tv.max()) > 0xFFFF:
-        raise ValueError("pair values exceed uint16; widen the pair block format")
-    rec = np.empty(len(p), dtype=[("b", "<u2"), ("pv", "<u2"), ("nv", "<u2"), ("tv", "<u2")])
-    rec["b"], rec["pv"], rec["nv"], rec["tv"] = p.b, p.pv, p.nv, p.tv
-    per_part = PART_BYTES // rec.itemsize
-    starts = np.flatnonzero(np.r_[True, np.diff(p.a) != 0])
-    ends = np.r_[starts[1:], len(p.a)]
-    for s, e in zip(starts, ends):
-        a = int(p.a[s])
-        for part, off in enumerate(range(s, e, per_part)):
-            yield a, part, rec[off:min(off + per_part, e)].tobytes()
-
-
-def lookup_pair(blocks: dict[int, bytes], a: int, b: int) -> tuple[int, int, int] | None:
-    """Reference implementation of the worker's lookup (used in tests)."""
-    lo, hi, flip = (a, b, False) if a < b else (b, a, True)
-    data = blocks.get(lo)
-    if not data:
-        return None
-    rec = np.frombuffer(data, dtype=[("b", "<u2"), ("pv", "<u2"), ("nv", "<u2"), ("tv", "<u2")])
-    i = int(np.searchsorted(rec["b"], hi))
-    if i >= len(rec) or rec["b"][i] != hi:
-        return None
-    pv, nv, tv = int(rec["pv"][i]), int(rec["nv"][i]), int(rec["tv"][i])
-    return (nv, pv, tv) if flip else (pv, nv, tv)
 
 
 def fnv1a(s: str) -> int:
@@ -66,12 +40,16 @@ def fnv1a(s: str) -> int:
     return h
 
 
+def _nbytes(obj: object) -> int:
+    return len(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
 def _json_parts(items: list[tuple[str, object]]) -> Iterator[str]:
     buf: dict[str, object] = {}
     size = 2
     for k, v in items:
-        n = len(json.dumps({k: v}, ensure_ascii=False, separators=(",", ":")))
-        if buf and size + n > PART_JSON_CHARS:
+        n = _nbytes({k: v})
+        if buf and size + n > PART_TEXT_BYTES:
             yield json.dumps(buf, ensure_ascii=False, separators=(",", ":"))
             buf, size = {}, 2
         buf[k] = v
@@ -97,6 +75,90 @@ def name_shards(records: dict[int, dict]) -> Iterator[tuple[int, int, str]]:
             shards.setdefault(fnv1a(name) % NAME_SHARDS, []).append((name, uid))
     for shard in sorted(shards):
         for part, text in enumerate(_json_parts(sorted(shards[shard]))):
+            yield shard, part, text
+
+
+def json_array_parts(rows: list) -> Iterator[str]:
+    """Split a list into JSON arrays of at most PART_TEXT_BYTES each."""
+    buf: list = []
+    size = 2
+    for r in rows:
+        n = _nbytes(r) + 1
+        if buf and size + n > PART_TEXT_BYTES:
+            yield json.dumps(buf, ensure_ascii=False, separators=(",", ":"))
+            buf, size = [], 2
+        buf.append(r)
+        size += n
+    if buf:
+        yield json.dumps(buf, ensure_ascii=False, separators=(",", ":"))
+
+
+def text_parts(text: str) -> Iterator[str]:
+    """Split a string into pieces of at most PART_TEXT_BYTES UTF-8 bytes (on character boundaries)."""
+    raw = text.encode("utf-8")
+    pos = 0
+    while pos < len(raw):
+        piece = raw[pos:pos + PART_TEXT_BYTES].decode("utf-8", errors="ignore")
+        pos += len(piece.encode("utf-8"))
+        yield piece
+
+
+def voter_shards(vidx: np.ndarray, uid: np.ndarray, vote: np.ndarray, spd: np.ndarray) -> Iterator[tuple[int, int, bytes]]:
+    """Per-VN voter lists for exact joint distributions of any two VNs.
+
+    Shard = vn idx % VOTER_SHARDS. A part is a sequence of segments
+    ``idx:u16 n:u32`` followed by n records ``uid:u32 vote:u8 spd:u8`` sorted by
+    uid; one VN may continue in several segments across parts."""
+    order = np.lexsort((uid, vidx))
+    recs = np.empty(len(order), dtype=VOTER_DTYPE)
+    recs["uid"], recs["vote"], recs["spd"] = uid[order], vote[order], spd[order]
+    v = vidx[order]
+    starts = np.flatnonzero(np.r_[True, np.diff(v) != 0])
+    ends = np.r_[starts[1:], len(v)]
+    by_shard: dict[int, list[tuple[int, np.ndarray]]] = {}
+    for s, e in zip(starts, ends):
+        by_shard.setdefault(int(v[s]) % VOTER_SHARDS, []).append((int(v[s]), recs[s:e]))
+    head = np.dtype([("idx", "<u2"), ("n", "<u4")])
+    per_seg = (PART_BYTES - head.itemsize) // VOTER_DTYPE.itemsize
+    for shard in sorted(by_shard):
+        part, buf = 0, bytearray()
+        for idx, r in by_shard[shard]:
+            off = 0
+            while off < len(r):
+                room = (PART_BYTES - len(buf) - head.itemsize) // VOTER_DTYPE.itemsize
+                if room <= 0:
+                    yield shard, part, bytes(buf)
+                    part, buf = part + 1, bytearray()
+                    room = per_seg
+                take = min(room, len(r) - off)
+                h = np.array([(idx, take)], dtype=head)
+                buf += h.tobytes() + r[off:off + take].tobytes()
+                off += take
+        if buf:
+            yield shard, part, bytes(buf)
+
+
+def read_voters(parts: list[bytes], idx: int) -> np.ndarray:
+    """Reference reader for voter_shards (the worker mirrors this)."""
+    out = []
+    for data in parts:
+        pos = 0
+        while pos < len(data):
+            i, n = np.frombuffer(data, dtype=[("idx", "<u2"), ("n", "<u4")], count=1, offset=pos)[0]
+            pos += 6
+            if int(i) == idx:
+                out.append(np.frombuffer(data, dtype=VOTER_DTYPE, count=int(n), offset=pos))
+            pos += int(n) * VOTER_DTYPE.itemsize
+    return np.concatenate(out) if out else np.zeros(0, dtype=VOTER_DTYPE)
+
+
+def note_shards(rows: list[list], key: int, shards: int) -> Iterator[tuple[int, int, str]]:
+    """Group note rows by rows[key] % shards into JSON array parts."""
+    groups: dict[int, list] = {}
+    for r in rows:
+        groups.setdefault(int(r[key]) % shards, []).append(r)
+    for shard in sorted(groups):
+        for part, text in enumerate(json_array_parts(groups[shard])):
             yield shard, part, text
 
 

@@ -7,7 +7,7 @@ For each ranked VN, computed from the votes of non-ignored users:
 * ``years``  [[year, count, mean], ...] by vote date
 * ``labels`` list-status counts {1 playing, 2 finished, 3 stalled, 4 dropped, 5 wishlist, 6 blacklist}
 * ``sp``     how its voters place it within their own lists: mean sample
-             percentile and a 5-bucket histogram (0-20%, ..., 80-100%)
+             percentile and a 10-bucket histogram (0-10%, ..., 90-100%)
 * ``bias``   mean of (vote - that voter's own mean vote): positive means its
              voters like it more than they usually like things
 """
@@ -28,6 +28,11 @@ def per_user_percentiles(votes: Votes) -> np.ndarray:
     return rank / (n + 1)
 
 
+def sp_decile(sp: np.ndarray) -> np.ndarray:
+    """Sample percentile (0, 1) -> bucket 0..9."""
+    return np.minimum((np.asarray(sp) * 10).astype(np.int64), 9)
+
+
 def per_user_means(votes: Votes) -> np.ndarray:
     """Each vote's user mean (10-100 scale), aligned with votes."""
     return pd.Series(votes.vote, dtype=np.float64).groupby(votes.uid).transform("mean").to_numpy()
@@ -43,8 +48,8 @@ def build_analysis(votes: Votes, n_items: int, vn_labels: np.ndarray, sp: np.nda
     s1 = np.bincount(idx, weights=v10, minlength=n_items)
     s2 = np.bincount(idx, weights=v10 * v10, minlength=n_items)
     sp_sum = np.bincount(idx, weights=sp, minlength=n_items)
-    sp_hist = np.zeros((n_items, 5), dtype=np.int64)
-    np.add.at(sp_hist, (idx, np.minimum((sp * 5).astype(int), 4)), 1)
+    sp_hist = np.zeros((n_items, 10), dtype=np.int64)
+    np.add.at(sp_hist, (idx, sp_decile(sp)), 1)
     bias = np.bincount(idx, weights=(votes.vote - user_mean) / 10, minlength=n_items)
 
     yr = pd.DataFrame({"i": idx, "y": votes.year, "v": v10})

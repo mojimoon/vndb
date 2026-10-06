@@ -4,7 +4,7 @@ import { useVnContext } from "./VnLayout";
 
 export default function Similar() {
   const { t } = useI18n();
-  const { vn, others } = useVnContext();
+  const { vn, cat } = useVnContext();
   const max = Math.max(0.01, ...vn.similar.map((s) => s.sim));
   return (
     <section className="space-y-3">
@@ -14,7 +14,7 @@ export default function Similar() {
       ) : (
         <ol className="space-y-2">
           {vn.similar.map((s, i) => {
-            const o = others.get(s.id);
+            const o = cat.byId.get(s.id);
             return (
               <li key={s.id} className="grid grid-cols-[1.5rem_1fr] items-baseline gap-2 rounded-lg border border-line bg-surface px-3 py-2.5">
                 <span className="tabular text-xs text-ink-3">{i + 1}</span>

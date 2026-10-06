@@ -1,4 +1,19 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+
+/** Width of the chart's container in CSS pixels, so SVG text keeps its size
+ *  instead of scaling with the card. */
+function useWidth(fallback = 600) {
+  const ref = useRef<HTMLElement>(null);
+  const [w, setW] = useState(fallback);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(240, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
 
 /** 1234 -> "1.2k", 0.153 -> "0.15" for axis ticks. */
 export function compact(v: number): string {
@@ -38,42 +53,85 @@ function YAxis({ ticks, y, x, format = compact, width }: { ticks: number[]; y: (
 
 /** Single-series bar chart with a hover readout. Values are magnitudes, so the
  *  y axis starts at zero; bars get 4px rounded tops and 2px gaps. */
+export interface SecondaryLine {
+  name: string;
+  values: (number | null)[];
+  format: (v: number) => string;
+  /** Fixed axis range; fitted to the values when omitted. */
+  domain?: [number, number];
+}
+
+/** Bars on the left axis, optionally with a second series drawn as a line on
+ *  its own right axis (secondary color, labelled, with a legend). */
 export function BarChart({
   data,
   format = (v) => v.toLocaleString(),
   height = 180,
   label,
+  barName,
+  line,
 }: {
   data: { x: string; y: number }[];
   format?: (v: number) => string;
   height?: number;
   label: string;
+  barName?: string;
+  line?: SecondaryLine;
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 600;
+  const [ref, W] = useWidth();
   const H = height;
   const padL = 40;
+  const padR = line ? 44 : 0;
   const padB = 22;
   const padT = 8;
   const ticks = niceTicks(Math.max(1, ...data.map((d) => d.y)));
   const max = ticks[ticks.length - 1];
   const y = (v: number) => padT + (H - padB - padT) * (1 - v / max);
-  const bw = (W - padL) / data.length;
+  const bw = (W - padL - padR) / data.length;
   const h = hover !== null ? data[hover] : null;
   // Label every bar when there are few, otherwise about 8 labels.
   const every = data.length <= 12 ? 1 : Math.ceil(data.length / 8);
 
+  // Secondary axis
+  const lv = line?.values.filter((v): v is number => v !== null) ?? [];
+  let [lo, hi] = line?.domain ?? [Math.min(...lv), Math.max(...lv)];
+  if (!line?.domain && lv.length) {
+    const pad = (hi - lo) * 0.1 || 0.5;
+    [lo, hi] = [Math.floor((lo - pad) * 2) / 2, Math.ceil((hi + pad) * 2) / 2];
+  }
+  const y2 = (v: number) => padT + (H - padB - padT) * (1 - (v - lo) / (hi - lo || 1));
+  const cx = (i: number) => padL + i * bw + bw / 2;
+
   return (
-    <figure className="relative">
-      <div className="mb-1 h-5 text-xs text-ink-2 tabular" aria-live="polite">
-        {h ? (
-          <>
-            <span className="font-medium text-ink">{h.x}</span>: {format(h.y)}
-          </>
-        ) : null}
+    <figure ref={ref as React.RefObject<HTMLElement>} className="relative">
+      <div className="mb-1 flex min-h-5 flex-wrap items-center justify-between gap-x-3 text-xs text-ink-2 tabular" aria-live="polite">
+        {line ? <Legend items={[barName ?? label, line.name]} /> : <span />}
+        <span>
+          {h ? (
+            <>
+              <span className="font-medium text-ink">{h.x}</span>: {format(h.y)}
+              {line && line.values[hover!] !== null && (
+                <>
+                  {" "}
+                  · {line.name} {line.format(line.values[hover!]!)}
+                </>
+              )}
+            </>
+          ) : null}
+        </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
-        <YAxis ticks={ticks} y={y} x={padL} width={W} />
+        <YAxis ticks={ticks} y={y} x={padL} width={W - padR} />
+        {line && lv.length > 0 && (
+          <g>
+            {[lo, (lo + hi) / 2, hi].map((v) => (
+              <text key={v} x={W - padR + 6} y={y2(v) + 4} fontSize={11} fill="var(--series-2)">
+                {line.format(v)}
+              </text>
+            ))}
+          </g>
+        )}
         {data.map((d, i) => {
           const bh = H - padB - y(d.y);
           const x = padL + i * bw + 1;
@@ -96,7 +154,109 @@ export function BarChart({
             </g>
           );
         })}
+        {line && lv.length > 0 && (
+          <g pointerEvents="none">
+            <polyline
+              points={line.values.map((v, i) => (v === null ? null : `${cx(i)},${y2(v)}`)).filter(Boolean).join(" ")}
+              fill="none"
+              stroke="var(--series-2)"
+              strokeWidth={2}
+            />
+            {line.values.map((v, i) =>
+              v === null ? null : <circle key={i} cx={cx(i)} cy={y2(v)} r={hover === i ? 5 : 3} fill="var(--series-2)" stroke="var(--surface)" strokeWidth={2} />,
+            )}
+          </g>
+        )}
       </svg>
+    </figure>
+  );
+}
+
+/** Running share of the total, as a 0-100% secondary line. */
+export function cumulativeLine(values: number[], name: string): SecondaryLine {
+  const total = values.reduce((a, b) => a + b, 0) || 1;
+  let run = 0;
+  return {
+    name,
+    values: values.map((v) => (run += v) / total),
+    format: (v) => `${Math.round(v * 100)}%`,
+    domain: [0, 1],
+  };
+}
+
+/** Sequential-scale 10x10 matrix (e.g. joint vote distribution of two titles). */
+export function Matrix({
+  data,
+  labels,
+  xName,
+  yName,
+  label,
+  normalize = "all",
+}: {
+  data: number[][]; // data[row = y][col = x]
+  labels: string[];
+  xName: string;
+  yName: string;
+  label: string;
+  normalize?: "all" | "row";
+}) {
+  const [hover, setHover] = useState<[number, number] | null>(null);
+  const total = data.flat().reduce((a, b) => a + b, 0) || 1;
+  const rowSum = data.map((r) => r.reduce((a, b) => a + b, 0) || 1);
+  const share = (r: number, c: number) => data[r][c] / (normalize === "row" ? rowSum[r] : total);
+  const max = Math.max(1e-9, ...data.flatMap((row, r) => row.map((_, c) => share(r, c))));
+  const n = labels.length;
+  return (
+    <figure>
+      <div className="mb-1 h-5 text-xs text-ink-2 tabular" aria-live="polite">
+        {hover && (
+          <>
+            {yName} <span className="font-medium text-ink">{labels[hover[0]]}</span> · {xName} <span className="font-medium text-ink">{labels[hover[1]]}</span>:{" "}
+            {data[hover[0]][hover[1]].toLocaleString()} ({(share(hover[0], hover[1]) * 100).toFixed(1)}%)
+          </>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="mx-auto border-separate border-spacing-[2px] text-[10px]" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
+          <tbody>
+            {Array.from({ length: n }, (_, k) => n - 1 - k).map((r) => (
+              <tr key={r}>
+                <th scope="row" className="pr-1 text-right font-normal text-ink-3 tabular">
+                  {labels[r]}
+                </th>
+                {labels.map((_, c) => {
+                  const f = share(r, c) / max;
+                  return (
+                    <td
+                      key={c}
+                      onMouseEnter={() => setHover([r, c])}
+                      className={`h-7 w-8 min-w-7 rounded-[3px] text-center tabular ${hover && hover[0] === r && hover[1] === c ? "outline-2 outline-ink" : ""}`}
+                      style={{
+                        background: data[r][c] ? `color-mix(in oklab, var(--seq-1) ${Math.round(f * 100)}%, var(--seq-0))` : "var(--surface-2)",
+                        color: f > 0.55 ? "var(--surface)" : "var(--text-2)",
+                      }}
+                    >
+                      {data[r][c] ? data[r][c] : ""}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            <tr>
+              <th />
+              {labels.map((l) => (
+                <th key={l} className="pt-1 font-normal text-ink-3 tabular">
+                  {l}
+                </th>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-1 flex justify-between text-xs text-ink-3">
+        <span>↑ {yName}</span>
+        <span>{xName} →</span>
+      </div>
     </figure>
   );
 }
@@ -114,8 +274,8 @@ export function LineChart({
   height?: number;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [ref, W] = useWidth();
   if (!data.length) return null;
-  const W = 600;
   const H = height;
   const padL = 40;
   const padB = 22;
@@ -129,7 +289,7 @@ export function LineChart({
   const every = Math.ceil(data.length / 8);
   const h = hover !== null ? data[hover] : null;
   return (
-    <figure>
+    <figure ref={ref as React.RefObject<HTMLElement>}>
       <div className="mb-1 h-5 text-xs text-ink-2 tabular" aria-live="polite">
         {h ? (
           <>
@@ -187,8 +347,8 @@ export function RankLines({
   height?: number;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [ref, W] = useWidth();
   if (!points.length) return null;
-  const W = 900;
   const H = height;
   const padL = 40;
   const padB = 22;
@@ -203,7 +363,7 @@ export function RankLines({
   const h = hover !== null ? points[hover] : null;
   const ticks = [lo, Math.round((lo + hi) / 2), hi];
   return (
-    <figure className="space-y-1">
+    <figure ref={ref as React.RefObject<HTMLElement>} className="space-y-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Legend items={names} />
         <div className="h-5 text-xs text-ink-2 tabular" aria-live="polite">
@@ -275,7 +435,7 @@ export function PairedBars({ x, a, b, names, label }: { x: string[]; a: number[]
   const sb = b.map((v) => v / tb);
   const ticks = niceTicks(Math.max(0.01, ...sa, ...sb));
   const max = ticks[ticks.length - 1];
-  const W = 600;
+  const [ref, W] = useWidth();
   const H = 180;
   const padL = 40;
   const padB = 22;
@@ -285,7 +445,7 @@ export function PairedBars({ x, a, b, names, label }: { x: string[]; a: number[]
   const bw = (gw - 6) / 2;
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
   return (
-    <figure className="space-y-1">
+    <figure ref={ref as React.RefObject<HTMLElement>} className="space-y-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Legend items={names} />
         <div className="h-5 text-xs text-ink-2 tabular" aria-live="polite">

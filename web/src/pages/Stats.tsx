@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMeta } from "../lib/api";
 import { formatInt } from "../lib/format";
 import { useI18n } from "../lib/i18n";
-import { BarChart, LineChart } from "../components/Charts";
+import { BarChart, cumulativeLine } from "../components/Charts";
 import { Status } from "../components/Status";
 
 export default function Stats() {
@@ -52,21 +52,21 @@ export default function Stats() {
           {table ? (
             <SimpleTable head={[t("stats.score"), t("stats.count")]} rows={hist.map((d) => [d.x, formatInt(d.y)])} />
           ) : (
-            <BarChart data={hist} label={t("stats.dist")} />
+            <BarChart data={hist} label={t("stats.dist")} barName={t("stats.count")} line={cumulativeLine(hist.map((h) => h.y), t("chart.cumulative"))} />
           )}
         </Card>
         <Card title={t("stats.byYear")}>
           {table ? (
             <SimpleTable head={[t("stats.year"), t("stats.count"), t("stats.mean")]} rows={years.map((y) => [String(y.year), formatInt(y.count), y.mean.toFixed(2)])} />
           ) : (
-            <BarChart data={years.map((y) => ({ x: String(y.year), y: y.count }))} label={t("stats.byYear")} />
+            <BarChart
+              data={years.map((y) => ({ x: String(y.year), y: y.count }))}
+              label={t("stats.byYear")}
+              barName={t("stats.count")}
+              line={{ name: t("stats.mean"), values: years.map((y) => y.mean), format: (v) => v.toFixed(2) }}
+            />
           )}
         </Card>
-        {!table && (
-          <Card title={t("stats.meanByYear")}>
-            <LineChart data={years.map((y) => ({ x: String(y.year), y: y.mean }))} format={(v) => v.toFixed(2)} label={t("stats.meanByYear")} />
-          </Card>
-        )}
       </section>
     </div>
   );

@@ -1,15 +1,15 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, Outlet, useOutletContext, useParams } from "react-router";
-import { useMeta, useVn, type Meta, type OtherVn, type VnDetail } from "../../lib/api";
-import { coverUrl, formatDate, formatInt, titles } from "../../lib/format";
+import { all, useCatalogue, useMeta, useVn, type Catalogue, type CatalogueItem, type Meta, type VnDetail } from "../../lib/api";
+import { coverUrl, devName, formatDate, formatInt, titles } from "../../lib/format";
 import { langName, useI18n } from "../../lib/i18n";
 import { Status } from "../../components/Status";
 import { Tabs } from "../../components/Tabs";
 
 export interface VnContext {
   vn: VnDetail;
-  meta: Meta | null;
-  others: Map<number, OtherVn>;
+  meta: Meta;
+  cat: Catalogue;
 }
 export const useVnContext = () => useOutletContext<VnContext>();
 
@@ -17,13 +17,15 @@ export default function VnLayout() {
   const { id } = useParams();
   const vn = useVn(Number(id));
   const meta = useMeta();
-  const others = useMemo(() => new Map(vn.state === "ok" ? vn.data.others.map((o) => [o.id, o]) : []), [vn]);
+  const cat = useCatalogue();
   const { t } = useI18n();
-  if (vn.state !== "ok") return <Status value={vn} />;
-  const base = `/vn/${vn.data.id}`;
+  const both = all<[VnDetail, Meta, Catalogue]>(vn, meta, cat);
+  if (both.state !== "ok") return <Status value={both} />;
+  const [v, m, c] = both.data;
+  const base = `/vn/${v.id}`;
   return (
     <article className="space-y-6">
-      <Header vn={vn.data} />
+      <Header vn={v} item={c.byId.get(v.id)} />
       <Tabs
         base={base}
         tabs={[
@@ -32,19 +34,20 @@ export default function VnLayout() {
           { path: "ranks", label: t("vn.tab.ranks") },
           { path: "versus", label: t("vn.tab.versus") },
           { path: "similar", label: t("vn.tab.similar") },
+          { path: "notes", label: `${t("vn.tab.notes")}${v.analysis.notes ? ` (${v.analysis.notes})` : ""}` },
         ]}
       />
-      <Outlet context={{ vn: vn.data, meta: meta.state === "ok" ? meta.data : null, others } satisfies VnContext} />
+      <Outlet context={{ vn: v, meta: m, cat: c } satisfies VnContext} />
     </article>
   );
 }
 
-function Header({ vn }: { vn: VnDetail }) {
+function Header({ vn, item }: { vn: VnDetail; item?: CatalogueItem }) {
   const { t, lang } = useI18n();
   const { main, sub } = titles(vn, lang);
-  const dev = lang === "zh" ? vn.dev : vn.dev_latin ?? vn.dev;
+  const dev = item ? devName(item, lang) : null;
   const facts: [string, React.ReactNode][] = [
-    [t("vn.developer"), vn.dev_id ? <Link className="hover:text-accent-ink hover:underline" to={`/?dev=${vn.dev_id}`}>{dev}</Link> : "—"],
+    [t("vn.developer"), vn.dev_id ? <Link className="hover:text-accent-ink hover:underline" to={`/dev/${vn.dev_id}`}>{dev}</Link> : "—"],
     [t("vn.released"), formatDate(vn.released)],
     [t("rank.olang"), vn.olang ? langName(vn.olang, lang) : "—"],
     [t("vn.votes"), formatInt(vn.votes)],

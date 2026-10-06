@@ -26,7 +26,7 @@ MAX_STATEMENT_BYTES = 90_000  # D1 caps a single statement at 100 KB
 SCHEMA: dict[str, str] = {
     "vn": """
   id           INTEGER PRIMARY KEY,   -- VNDB id without the "v" prefix
-  idx          INTEGER NOT NULL,      -- position in this snapshot (pair blocks / user votes refer to it)
+  idx          INTEGER NOT NULL,      -- position in this snapshot (voter shards / user votes refer to it)
   title        TEXT    NOT NULL,      -- title in the original language
   latin        TEXT,
   title_ja     TEXT,
@@ -55,12 +55,6 @@ SCHEMA: dict[str, str] = {
   name   TEXT NOT NULL,
   latin  TEXT
 """,
-    "pair_block": """
-  a    INTEGER NOT NULL,   -- vn.idx of the lower side
-  part INTEGER NOT NULL,
-  data BLOB    NOT NULL,   -- (b, pv, nv, tv) as little-endian uint16, sorted by b
-  PRIMARY KEY (a, part)
-""",
     "user_block": """
   shard INTEGER NOT NULL,  -- uid % 2048
   part  INTEGER NOT NULL,
@@ -72,6 +66,30 @@ SCHEMA: dict[str, str] = {
   part  INTEGER NOT NULL,
   data  TEXT    NOT NULL,  -- JSON {lower(name): uid}
   PRIMARY KEY (shard, part)
+""",
+    "vn_voters": """
+  shard INTEGER NOT NULL,  -- vn idx % 1024
+  part  INTEGER NOT NULL,
+  data  BLOB    NOT NULL,  -- segments (idx u16, n u32) + n x (uid u32, vote u8, sp decile u8), see storage.voter_shards
+  PRIMARY KEY (shard, part)
+""",
+    "vn_notes": """
+  shard INTEGER NOT NULL,  -- vn idx % 512
+  part  INTEGER NOT NULL,
+  data  TEXT    NOT NULL,  -- JSON [[idx, uid, name, vote, date, text, has_page], ...], newest first per VN
+  PRIMARY KEY (shard, part)
+""",
+    "user_notes": """
+  shard INTEGER NOT NULL,  -- uid % 1024
+  part  INTEGER NOT NULL,
+  data  TEXT    NOT NULL,  -- JSON [[uid, idx, vote, date, text], ...]
+  PRIMARY KEY (shard, part)
+""",
+    "doc": """
+  key   TEXT    NOT NULL,  -- "catalogue", "ranks:<method>"
+  part  INTEGER NOT NULL,
+  data  TEXT    NOT NULL,  -- a prebuilt JSON response, split into parts
+  PRIMARY KEY (key, part)
 """,
     "meta": """
   key   TEXT PRIMARY KEY,
@@ -87,7 +105,7 @@ VN_COLUMNS = [
 
 
 # Tables keyed by a composite or text key are stored clustered on that key.
-WITHOUT_ROWID = {"pair_block", "user_block", "user_name", "meta"}
+WITHOUT_ROWID = {"user_block", "user_name", "vn_voters", "vn_notes", "user_notes", "doc", "meta"}
 
 
 PRODUCER_COLUMNS = ["id", "name", "latin"]

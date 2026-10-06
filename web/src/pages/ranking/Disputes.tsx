@@ -1,18 +1,18 @@
 import { useMemo } from "react";
 import { useI18n } from "../../lib/i18n";
 import { VnLink } from "../../components/VnLink";
+import { useShowMore } from "../../components/ShowMore";
 import { useRanking } from "./RankingLayout";
 import type { Row } from "./data";
 
 const TOP = 500;
-const SHOW = 20;
 
 export default function Disputes() {
   const { t } = useI18n();
   const { filtered } = useRanking();
   const [under, over] = useMemo(() => {
-    const u = filtered.filter((r) => r.rank <= TOP).sort((a, b) => b.vndb_rank - b.rank - (a.vndb_rank - a.rank)).slice(0, SHOW);
-    const o = filtered.filter((r) => r.vndb_rank <= TOP).sort((a, b) => b.rank - b.vndb_rank - (a.rank - a.vndb_rank)).slice(0, SHOW);
+    const u = filtered.filter((r) => r.rank <= TOP).sort((a, b) => b.vndb_rank - b.rank - (a.vndb_rank - a.rank));
+    const o = filtered.filter((r) => r.vndb_rank <= TOP).sort((a, b) => b.rank - b.vndb_rank - (a.rank - a.vndb_rank));
     return [u.filter((r) => r.vndb_rank > r.rank), o.filter((r) => r.rank > r.vndb_rank)];
   }, [filtered]);
   return (
@@ -28,6 +28,7 @@ export default function Disputes() {
 
 function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
   const { t } = useI18n();
+  const [visible, more] = useShowMore(rows, 20, 30);
   return (
     <section className="rounded-lg border border-line bg-surface">
       <h2 className="border-b border-line px-4 py-2.5 text-sm font-semibold">{title}</h2>
@@ -40,7 +41,7 @@ function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {visible.map((r) => (
             <tr key={r.id} className="border-t border-line">
               <td className="tabular px-3 py-1.5 text-right font-semibold">{r.rank}</td>
               <td className="tabular px-3 py-1.5 text-right text-ink-2">{r.vndb_rank}</td>
@@ -51,6 +52,7 @@ function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
           ))}
         </tbody>
       </table>
+      <div className="pb-2">{more}</div>
     </section>
   );
 }

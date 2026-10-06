@@ -47,6 +47,8 @@ export default function Methods() {
         </dl>
       </section>
 
+      <Credits />
+
       <Heatmap kendall={kendall} />
 
       {GROUPS.map((g) => {
@@ -94,7 +96,7 @@ function RankitGrid({ methods }: { methods: string[] }) {
             </tr>
           </thead>
           <tbody>
-            {RANKER_CODES.map((r) => (
+            {RANKER_CODES.filter((r) => VARIABLE_CODES.some((v) => have.has(`${r}_${v}`))).map((r) => (
               <tr key={r} className="border-t border-line">
                 <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-medium">
                   {rankerName(r, lang)}
@@ -179,6 +181,90 @@ function Heatmap({ kendall }: { kendall: Meta["kendall"] }) {
         <span className="tabular">τ {lo.toFixed(2)}</span>
         <span className="h-2 w-32 rounded-full" style={{ background: "linear-gradient(to right, var(--seq-0), var(--seq-1))" }} />
         <span>1</span>
+      </div>
+    </section>
+  );
+}
+
+const CREDITS: Record<Lang, { title: string; body: React.ReactNode }[]> = {
+  zh: [
+    {
+      title: "偏序网络（PONet）",
+      body: (
+        <>
+          由 <a href="https://bgm.tv/user/eyecandy">@eyecandy</a> 提出，并于 2022 年在{" "}
+          <a href="https://bgm.tv/group/topic/371075">Bangumi 讨论区</a>以动画区数据做了实验。2023 年本项目作者用 Bangumi15M 数据集重算（
+          <a href="https://github.com/mojimoon/bangumi-anime-ranking/tree/main/ponet">mojimoon/bangumi-anime-ranking</a>，
+          <a href="https://bgm.tv/group/topic/382497">讨论帖</a>）。
+        </>
+      ),
+    },
+    {
+      title: "科学排名（rankit）",
+      body: (
+        <>
+          「科学排名」的思路与 Massey、Colley、Keener、Markov、攻防等算法的实现来自{" "}
+          <a href="https://github.com/wattlebird/ranking">wattlebird/ranking（rankit）</a>，介绍见{" "}
+          <a href="https://ikely.me/2016/02/05/%E4%BD%BF%E7%94%A8-rankit-%E6%9E%84%E5%BB%BA%E6%9B%B4%E7%A7%91%E5%AD%A6%E7%9A%84%E6%8E%92%E5%90%8D/">使用 rankit 构建更科学的排名</a>，
+          以及 <a href="https://chii.ai/rank">Bangumi 科学排名</a>。
+        </>
+      ),
+    },
+    {
+      title: "数据",
+      body: (
+        <>
+          所有数据来自 <a href="https://vndb.org/d14">VNDB 数据库转储</a>（ODbL），每日更新。
+        </>
+      ),
+    },
+  ],
+  en: [
+    {
+      title: "Partial order network (PONet)",
+      body: (
+        <>
+          Proposed by <a href="https://bgm.tv/user/eyecandy">@eyecandy</a>, who tried it on Bangumi's anime ratings in 2022 (
+          <a href="https://bgm.tv/group/topic/371075">discussion</a>). Recomputed in 2023 from the Bangumi15M dataset in{" "}
+          <a href="https://github.com/mojimoon/bangumi-anime-ranking/tree/main/ponet">mojimoon/bangumi-anime-ranking</a> (
+          <a href="https://bgm.tv/group/topic/382497">discussion</a>).
+        </>
+      ),
+    },
+    {
+      title: "Scientific ranking (rankit)",
+      body: (
+        <>
+          The scientific-ranking approach and the Massey, Colley, Keener, Markov and offence–defence implementations come from{" "}
+          <a href="https://github.com/wattlebird/ranking">wattlebird/ranking (rankit)</a>; see the write-up{" "}
+          <a href="https://ikely.me/2016/02/05/%E4%BD%BF%E7%94%A8-rankit-%E6%9E%84%E5%BB%BA%E6%9B%B4%E7%A7%91%E5%AD%A6%E7%9A%84%E6%8E%92%E5%90%8D/">Building better rankings with rankit</a>{" "}
+          and <a href="https://chii.ai/rank">Bangumi's scientific ranking</a>.
+        </>
+      ),
+    },
+    {
+      title: "Data",
+      body: (
+        <>
+          All data comes from the <a href="https://vndb.org/d14">VNDB database dump</a> (ODbL), refreshed daily.
+        </>
+      ),
+    },
+  ],
+};
+
+function Credits() {
+  const { t, lang } = useI18n();
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold">{t("methods.credits")}</h2>
+      <div className="grid gap-3 md:grid-cols-3">
+        {CREDITS[lang].map((c) => (
+          <div key={c.title} className="rounded-lg border border-line bg-surface p-4 text-sm leading-relaxed text-ink-2 [&_a]:text-accent-ink [&_a:hover]:underline">
+            <h3 className="mb-1 font-medium text-ink">{c.title}</h3>
+            <p>{c.body}</p>
+          </div>
+        ))}
       </div>
     </section>
   );

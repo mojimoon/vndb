@@ -16,21 +16,25 @@ from scipy.stats import kendalltau
 from . import __version__
 from .config import Config
 from .dump import Dump
-from .analysis import build_analysis, per_user_means, per_user_percentiles
+from .analysis import build_analysis, per_user_means, per_user_percentiles, sp_decile
 from .cf import CFConfig, build_users, similar_items
-from .export import PRODUCER_COLUMNS, VN_COLUMNS, compact_json, rank_table, ranks_json, vn_rows, write_sql
+from .export import PRODUCER_COLUMNS, VN_COLUMNS, _num, compact_json, rank_table, ranks_json, vn_rows, write_sql
 from .extract import load_catalogue, load_users, load_votes
 from .methods import compute_all
 from .neighbors import build_neighbors
 from .pairs import build_pairs
-from .storage import day_number, merge_history, name_shards, pair_blocks, rank_trend, user_shards
+from .leaderboards import build_leaderboards
+from .storage import (
+    USER_NOTE_SHARDS, VN_NOTE_SHARDS, day_number, merge_history, name_shards, note_shards,
+    rank_trend, text_parts, user_shards, voter_shards,
+)
 
 log = logging.getLogger("vndb_rank")
 
 # Shown first in the UI and used for the method-agreement matrix.
 FEATURED = [
     "borda_grand", "borda_sci", "borda_po", "po_percent", "po_simple", "po_weighted",
-    "po_bt", "po_elo", "po_rw", "po_entropy", "massey_prob", "colley_prob", "markov_rdv_sp_geo", "vndb",
+    "po_bt", "po_elo", "po_entropy", "colley_prob", "od_sp_ari", "markov_rdv_sp_geo", "vndb",
 ]
 
 
@@ -43,6 +47,12 @@ def kendall_matrix(scores: pd.DataFrame, methods: list[str]) -> dict:
             tau = kendalltau(filled.iloc[:, i], filled.iloc[:, j])[0]
             mat[i, j] = mat[j, i] = round(float(tau), 4) if not np.isnan(tau) else 0.0
     return {"methods": methods, "matrix": mat.tolist()}
+
+
+def _clean(v):
+    if v is None or v is pd.NA or (isinstance(v, float) and np.isnan(v)):
+        return None
+    return v.item() if hasattr(v, "item") else v
 
 
 def load_previous_history(path: Path | None) -> dict[int, list]:
@@ -72,9 +82,11 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
     n = len(cat.vn)
     ids = cat.ids
     ignored, names = load_users(dump)
-    votes, stats, vn_labels = load_votes(dump, cat, ignored)
+    date = dump.snapshot_date()
+    votes, stats, vn_labels, extras = load_votes(dump, cat, ignored, year=int(date[:4]), with_notes=not cfg.skip_notes)
+    sp = per_user_percentiles(votes)
 
-    analysis = build_analysis(votes, n, vn_labels, per_user_percentiles(votes), per_user_means(votes))
+    analysis = build_analysis(votes, n, vn_labels, sp, per_user_means(votes))
     pairs = build_pairs(votes, n, cfg.min_common_vote)
 
     scores = compute_all(pairs, n, skip_rankit=cfg.skip_rankit)
@@ -92,12 +104,27 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
     else:
         user_records = build_users(votes, n, names, cf).records
         item_sims = similar_items(votes, n, cf)
-    del votes
+    vn_mean = np.array([a["mean"] if a["mean"] is not None else np.nan for a in analysis])
+    leaderboards = build_leaderboards(votes, extras, names, vn_mean, set(user_records))
+    voters = list(voter_shards(votes.vidx, votes.uid, votes.vote.astype(np.uint8), sp_decile(sp).astype(np.uint8)))
+    del votes, sp
+
+    # Notes: per VN (newest first) and per user (only users with a page).
+    nt = extras.notes.sort_values(["vidx", "date"], ascending=[True, False])
+    vn_note_rows = [
+        [int(i), int(u), names.get(int(u), ""), int(v), int(d), t, int(u) in user_records]
+        for i, u, v, d, t in zip(nt["vidx"], nt["uid"], nt["vote"], nt["date"], nt["text"])
+    ]
+    nt = nt[nt["uid"].isin(list(user_records))].sort_values(["uid", "date"], ascending=[True, False])
+    user_note_rows = [[int(u), int(i), int(v), int(d), t] for u, i, v, d, t in zip(nt["uid"], nt["vidx"], nt["vote"], nt["date"], nt["text"])]
+    note_count = np.bincount(extras.notes["vidx"].to_numpy(dtype=np.int64), minlength=n) if len(extras.notes) else np.zeros(n, int)
+    for i, a in enumerate(analysis):
+        a["notes"] = int(note_count[i])
+    del extras
 
     methods = list(scores.columns)
     featured = [m for m in FEATURED if m in methods]
     default = featured[0]
-    date = dump.snapshot_date()
     today = day_number(date)
     prev = load_previous_history(history_path)
     history = [merge_history(prev.get(int(vid)), today, [int(ranks[default].iloc[i]), int(ranks["vndb"].iloc[i])]) for i, vid in enumerate(ids)]
@@ -109,6 +136,7 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
     stats["pairs"] = len(pairs)
     stats["user_pages"] = len(user_records)
     stats["ignored_users"] = len(ignored)
+    stats["notes"] = len(vn_note_rows)
 
     snapshot = f"{date.replace('-', '')}-{dt.datetime.now(dt.timezone.utc).strftime('%H%M%S')}"
     meta = {
@@ -125,6 +153,7 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
         },
         "stats": stats,
         "kendall": kendall_matrix(scores, featured),
+        "leaderboards": leaderboards,
         "snapshot": snapshot,
     }
 
@@ -138,12 +167,38 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
         "similar": [compact_json([[int(ids[j]), s, c] for j, s, c in sims]) for sims in item_sims],
         "history": [compact_json(h) for h in history],
     }
+    # Prebuilt API payloads, served by the worker without parsing.
+    vndb_rank = ranks["vndb"].to_numpy()
+    cat_cols = ["id", "idx", "title", "latin", "title_ja", "title_zh", "title_en", "olang", "released",
+                "dev_id", "dev", "dev_latin", "votes", "rating", "length", "trend", "vndb_rank", "search"]
+    dev_name = cat.producers.set_index("id")["name"].to_dict()
+    dev_latin = cat.producers.set_index("id")["latin"].to_dict()
+    cat_rows = []
+    for i, r in enumerate(cat.vn.itertuples(index=False)):
+        d = None if pd.isna(r.dev_id) else int(r.dev_id)
+        lat = dev_latin.get(d) if d is not None else None
+        cat_rows.append([
+            int(r.id), i, r.title, _clean(r.latin), _clean(r.title_ja), _clean(r.title_zh), _clean(r.title_en), _clean(r.olang),
+            None if pd.isna(r.released) else int(r.released), d, dev_name.get(d) if d is not None else None,
+            None if lat is None or pd.isna(lat) else lat, int(r.votes), _clean(r.rating), _clean(r.length),
+            extra["trend"][i], int(vndb_rank[i]), r.search,
+        ])
+    docs = {"catalogue": compact_json({"columns": cat_cols, "rows": cat_rows})}
+    for m in methods:
+        order = np.lexsort((ids, ranks[m].to_numpy()))
+        sc = scores[m].to_numpy(dtype=np.float64)
+        docs[f"ranks:{m}"] = compact_json({"method": m, "ranks": [[int(ids[j]), int(ranks[m].iloc[j]), _num(sc[j])] for j in order]})
+    doc_rows = [[k, part, piece] for k, text in docs.items() for part, piece in enumerate(text_parts(text))]
+
     tables = {
         "vn": (VN_COLUMNS, vn_rows(cat.vn, extra)),
         "producer": (PRODUCER_COLUMNS, [[int(p.id), p.name, None if pd.isna(p.latin) else p.latin] for p in cat.producers.itertuples(index=False)]),
-        "pair_block": (["a", "part", "data"], pair_blocks(pairs)),
         "user_block": (["shard", "part", "data"], user_shards(user_records)),
         "user_name": (["shard", "part", "data"], name_shards(user_records)),
+        "vn_voters": (["shard", "part", "data"], voters),
+        "vn_notes": (["shard", "part", "data"], note_shards(vn_note_rows, 0, VN_NOTE_SHARDS)),
+        "user_notes": (["shard", "part", "data"], note_shards(user_note_rows, 0, USER_NOTE_SHARDS)),
+        "doc": (["key", "part", "data"], doc_rows),
         "meta": (["key", "value"], [[k, compact_json(v)] for k, v in meta.items()]),
     }
     counts = write_sql(out_dir / "snapshot.sql", tables)
@@ -167,13 +222,14 @@ def main() -> None:
     ap.add_argument("--min-user-votes", type=int, default=Config.min_user_votes)
     ap.add_argument("--skip-rankit", action="store_true", help="only compute the PONet methods (fast)")
     ap.add_argument("--skip-users", action="store_true", help="skip user pages, recommendations and similar VNs")
+    ap.add_argument("--skip-notes", action="store_true", help="do not export users' list notes")
     ap.add_argument("--history", type=Path, default=None, help="previous `SELECT id, history FROM vn` as JSON (wrangler --json output)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = Config(
         min_vote=args.min_vote, min_common_vote=args.min_common_vote,
         neighbors_per_category=args.neighbors, skip_rankit=args.skip_rankit,
-        min_user_votes=args.min_user_votes, skip_users=args.skip_users,
+        min_user_votes=args.min_user_votes, skip_users=args.skip_users, skip_notes=args.skip_notes,
     )
     run(args.dump, args.out, cfg, args.history)
 

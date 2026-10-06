@@ -9,9 +9,9 @@ on:
   schedule:
     # VNDB publishes the dump around 08:00 UTC; scheduled runs only fire on the default branch.
     - cron: "7 12 * * *"
-  # Pipeline changes on beta: build a snapshot from the real dump (no import).
+  # Pipeline changes on beta branches: build a snapshot from the real dump (no import).
   push:
-    branches: [beta]
+    branches: ["beta*"]
     paths: [pipeline/**, .github/workflows/refresh.yml]
   workflow_dispatch:
     inputs:

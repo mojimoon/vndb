@@ -212,11 +212,27 @@ def load_users(dump: Dump) -> tuple[set[int], dict[int, str]]:
     return ignored, names
 
 
-def load_votes(dump: Dump, catalogue: Catalogue, ignored: set[int] | None = None) -> tuple[Votes, dict, np.ndarray]:
+@dataclass
+class Extras:
+    """Side products of the ulist_vns pass."""
+    user_total: pd.Series   # uid -> votes on any VN
+    user_year: pd.Series    # uid -> votes cast in the dump's year
+    notes: pd.DataFrame     # uid, vidx, date (YYYYMMDD), vote (or 0), text; ranked VNs only
+
+
+NOTE_MIN_CHARS = 20
+NOTE_MAX_CHARS = 3000
+
+
+def load_votes(
+    dump: Dump, catalogue: Catalogue, ignored: set[int] | None = None, year: int | None = None, with_notes: bool = True
+) -> tuple[Votes, dict, np.ndarray, Extras]:
     """Single streaming pass over ulist_vns: collect votes on ranked VNs, per-VN
-    list-label counts and global vote statistics. Votes of users VNDB flags as
-    ignored are dropped everywhere."""
+    list-label counts, per-user totals, notes and global vote statistics.
+    Votes of users VNDB flags as ignored are dropped everywhere."""
     ignored = ignored or set()
+    year_of_dump = year
+    total_parts, year_count_parts, note_parts = [], [], []
     n_vn = len(catalogue.vn)
     id2idx = pd.Series(np.arange(n_vn, dtype=np.int32), index=catalogue.ids)
     uid_parts, vidx_parts, vote_parts, year_parts = [], [], [], []
@@ -229,13 +245,29 @@ def load_votes(dump: Dump, catalogue: Catalogue, ignored: set[int] | None = None
     labels = np.zeros(LABELS + 1, dtype=np.int64)
     rows = 0
 
-    cols = dump.optional_columns("ulist_vns", ["uid", "vid", "vote", "vote_date", "labels"])
+    wanted = ["uid", "vid", "vote", "vote_date", "lastmod", "labels"] + (["notes"] if with_notes else [])
+    cols = dump.optional_columns("ulist_vns", wanted)
     for chunk in dump.read_chunks("ulist_vns", cols):
         chunk["uid"] = strip_id(chunk["uid"])
         if ignored:
             chunk = chunk[~chunk["uid"].isin(ignored)]
         rows += len(chunk)
         chunk_vidx = strip_id(chunk["vid"]).map(id2idx)
+        if "notes" in chunk:
+            has_note = chunk["notes"].notna() & chunk_vidx.notna()
+            if has_note.any():
+                nt = chunk.loc[has_note, ["uid", "notes"]].copy()
+                nt["text"] = nt["notes"].map(unescape).str.strip()
+                nt = nt[nt["text"].str.len() >= NOTE_MIN_CHARS]
+                if len(nt):
+                    date_col = chunk.loc[nt.index, "lastmod"] if "lastmod" in chunk else pd.Series("", index=nt.index)
+                    note_parts.append(pd.DataFrame({
+                        "uid": nt["uid"].astype(np.int64).to_numpy(),
+                        "vidx": chunk_vidx.loc[nt.index].astype(np.int64).to_numpy(),
+                        "date": pd.to_numeric(date_col.str.replace("-", "").str[:8], errors="coerce").fillna(0).astype(np.int64).to_numpy(),
+                        "vote": pd.to_numeric(chunk.loc[nt.index, "vote"], errors="coerce").fillna(0).astype(np.int64).to_numpy(),
+                        "text": nt["text"].str.slice(0, NOTE_MAX_CHARS).to_numpy(),
+                    }))
         if "labels" in chunk:
             lab = chunk["labels"].fillna("")
             ranked = chunk_vidx.notna().to_numpy()
@@ -249,9 +281,12 @@ def load_votes(dump: Dump, catalogue: Catalogue, ignored: set[int] | None = None
         ok = vote.notna()
         chunk, vote, chunk_vidx = chunk[ok], vote[ok].astype(np.int16), chunk_vidx[ok]
         hist += np.bincount(vote.clip(0, 100), minlength=101)
+        total_parts.append(chunk["uid"].value_counts())
 
         if "vote_date" in chunk:
             year = pd.to_numeric(chunk["vote_date"].str[:4], errors="coerce")
+            if year_of_dump is not None:
+                year_count_parts.append(chunk.loc[(year == year_of_dump).to_numpy(), "uid"].value_counts())
             g = (vote / 10).groupby(year).agg(["count", "sum"])
             g["sq"] = ((vote / 10) ** 2).groupby(year).sum()
             for y, c, s_, q in zip(g.index, g["count"], g["sum"], g["sq"]):
@@ -294,7 +329,11 @@ def load_votes(dump: Dump, catalogue: Catalogue, ignored: set[int] | None = None
         "ranked_votes": int(len(uid)),
         "ranked_users": int(len(np.unique(uid))),
     }
-    return votes, stats, vn_labels
+    merge = lambda parts: pd.concat(parts).groupby(level=0).sum() if parts else pd.Series(dtype=np.int64)
+    notes = pd.concat(note_parts, ignore_index=True) if note_parts else pd.DataFrame(columns=["uid", "vidx", "date", "vote", "text"])
+    extras = Extras(user_total=merge(total_parts), user_year=merge(year_count_parts), notes=notes)
+    log.info("notes: %d (>= %d chars) on ranked VNs", len(notes), NOTE_MIN_CHARS)
+    return votes, stats, vn_labels, extras
 
 
 def vote_buckets(hist101: np.ndarray) -> list[int]:
