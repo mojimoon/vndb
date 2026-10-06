@@ -22,7 +22,7 @@ import numpy as np
 
 
 PART_BYTES = 40_000        # binary parts (hex-encoded in SQL, so ~80 KB per statement)
-PART_TEXT_BYTES = 80_000   # UTF-8 bytes per text part
+PART_TEXT_BYTES = 70_000   # UTF-8 bytes per text part (apostrophes double when quoted for SQL)
 USER_SHARDS = 2048
 NAME_SHARDS = 64
 VOTER_SHARDS = 1024        # vn idx % VOTER_SHARDS

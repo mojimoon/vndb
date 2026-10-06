@@ -19,10 +19,11 @@ dl.vndb.org dump (daily, ~08:00 UTC)
        │    extract.py    catalogue (VNs with >= 30 votes), users, one streaming pass over ulist_vns
        │    analysis.py   per-VN rating analysis
        │    pairs.py      N x N pair counts + mean votes / sample percentiles
-       │    methods.py    8 PONet, 40 rankit, 8 Borda methods + VNDB reference
+       │    methods.py    7 PONet, 24 rankit, 8 Borda methods + VNDB reference
+       │    leaderboards.py user leaderboards
        │    neighbors.py  per-VN head-to-head opponents
        │    cf.py         similar users, recommendations, similar VNs
-       │    storage.py    binary pair blocks, user shards, history
+       │    storage.py    voter blobs, user / note shards, text parts, history
        │    export.py     snapshot.sql (schema + data + table swap)
        └─ wrangler d1 execute --remote --file snapshot.sql
 Cloudflare D1  <──  Worker (Hono, web/worker/index.ts)  <──  React SPA (static assets)
@@ -31,34 +32,66 @@ Cloudflare D1  <──  Worker (Hono, web/worker/index.ts)  <──  React SPA (
 Votes of users VNDB flags `ign_votes` are dropped everywhere. On the
 2026-10-06 dump that removed ~2.2M of 7.1M comparable pairs.
 
+### Which ranking methods are kept
+
+Every method was checked on the 2026-10-06 dump against the consensus (median
+rank over all methods, Kendall tau) and against popularity (Spearman rho with
+log vote count). Dropped:
+
+| method(s) | tau vs consensus | why |
+| --- | --- | --- |
+| `po_rw` (random walk) | -0.04 | unrelated to every other method |
+| `keener_*` | 0.39-0.56 | rho ~0.75 with vote count: a popularity contest |
+| `markov_rv_*` | 0.42-0.62 | same (rho ~0.77) |
+| `difference_*` | 0.36-0.63 | top lists are simply the most-voted titles |
+| `massey_prob` | 0.41 | raw preference counts let big pairs dominate |
+
+`po_total` (tau 0.63) shows the same bias but is kept as one of the original
+PONet scores, without being featured. 39 methods remain.
+
 ## Schema (defined in `pipeline/vndb_rank/export.py`)
 
 Numbers from the 2026-10-06 dump:
 
 | table | rows | what one row holds |
 | --- | --- | --- |
-| `vn` | 7,945 | one VN: display fields + JSON columns `ranks` (57 methods), `analysis`, `neighbors`, `similar`, `relations`, `history` |
+| `vn` | 7,945 | one VN: display fields + JSON columns `ranks`, `analysis`, `neighbors`, `similar`, `relations`, `history` |
 | `producer` | 2,410 | one developer |
-| `pair_block` | 7,948 | all pairs (a, b > a) for one `a` as `b,pv,nv,tv` little-endian uint16, sorted by b (split at 40 KB) |
-| `user_block` | 2,048 | JSON `{uid: {name, votes, similar, recs}}` for users with `uid % 2048 == shard`; votes are base64 `(vn idx uint16, vote uint8)` |
+| `doc` | ~190 | a prebuilt API response split into ≤ 80 KB parts: `catalogue` (columnar) and `ranks:<method>` |
+| `vn_voters` | ~1.3k | voters of the VNs with `idx % 1024 == shard`: segments `(idx u16, n u32)` + n × `(uid u32, vote u8, sp decile u8)`, sorted by uid |
+| `vn_notes` | ~700 | JSON `[[idx, uid, name, vote, date, text, has_page], ...]` for `idx % 512 == shard`, newest first |
+| `user_notes` | ~1.3k | JSON `[[uid, idx, vote, date, text], ...]` for `uid % 1024 == shard` |
+| `user_block` | 2,048 | JSON `{uid: {name, votes, similar, recs}}` for `uid % 2048 == shard`; votes are base64 `(vn idx u16, vote u8)` |
 | `user_name` | 64 | JSON `{lower(username): uid}` for `fnv1a(name) % 64 == shard` |
-| `meta` | 4 | `snapshot`, `info`, `stats`, `kendall` |
-
-Total: **20,419 rows** and a 147 MB SQL file; an estimated ~100 MB in D1 (pair blocks are 39 MB of it).
+| `meta` | 5 | `snapshot`, `info`, `stats`, `kendall`, `leaderboards` |
 
 Design choices:
 
-* **One row read per page.** Everything a VN page needs is on its `vn` row; a
-  user page reads one shard; a pair lookup reads two `vn.idx` values and one
-  pair block. Rows written per refresh stay fixed no matter how many users or
-  pairs there are, because many small records share one row.
-* **Binary where it pays.** 4.9M pairs as JSON would be ~150 MB; packed they
-  are 39 MB. `vn.idx` (the VN's position in this snapshot) keeps pair entries
-  and user votes at 2 bytes per VN reference.
-* **No secondary indexes.** Every query is a primary-key lookup or a full scan
-  of `vn` (catalogue / ranks). Indexes would only add writes.
+* **Serve prebuilt payloads.** The catalogue (every ranked VN's display
+  fields, ~2 MB of JSON) and each method's rank list are stored as finished
+  JSON, so the worker concatenates a few rows and returns them without
+  parsing: ~25 rows read for the catalogue instead of ~16k.
+* **The catalogue is the shared lookup.** Every page loads it once (cached by
+  the browser and the edge) and resolves titles and developers from it, so
+  `/api/vn/:id` is a single-row read and developer pages need no API at all.
+* **Voter lists instead of a pair table.** Head-to-head counts and the 10×10
+  joint vote / percentile matrices of any two VNs are computed in the worker
+  by intersecting two uid-sorted voter lists. That replaced 7.9k rows (39 MB)
+  of precomputed pairs with ~11 MB and also covers pairs with < 5 common voters.
+* **Shard many small records into one row.** Users, notes and voters are
+  grouped by `id % shards`, so rows written per refresh stay fixed no matter
+  how many users or notes there are, and a page reads one shard (1-10 rows).
+* **No secondary indexes.** Every query is a primary-key lookup.
 * **The raw data stays offline.** Votes and the N² matrices live only in the
   pipeline's memory (a few GB on a 16 GB GitHub runner).
+
+### Notes ("reviews")
+
+The dump carries the free-text notes of public user lists. On ranked VNs there
+are 160k non-empty notes (16.9 MB); the 105k with at least 20 characters are
+kept (capped at 3,000 characters each). They are stored twice, by VN and by
+user, which costs ~33 MB and ~2k row writes per day, and are only fetched when
+a notes tab is opened. Pass `--skip-notes` to the pipeline to leave them out.
 
 ## Refresh: build, then swap
 
@@ -74,16 +107,16 @@ simply starts using new cache entries.
 
 ## Free-tier budget (Workers Free: 100k rows written, 5M rows read per day, 500 MB per DB)
 
-* **Writes:** ~20k per daily refresh.
-* **Reads per cache miss:**
-  * `/api/catalogue`: ~2N (vn + producer join); `/api/ranks?m=`: N.
-    Both are cached at the edge for a week per snapshot, and the browser
-    joins them, so switching methods or adding comparison columns only
-    fetches the small per-method rank list.
-  * `/api/vn/:id`: 1 + up to ~60 (neighbors, relations, similar titles).
-  * `/api/pair/:a/:b`: 2 + 1-2. `/api/user/:uid`: 1-2. `/api/user-lookup`: 1.
-  * The snapshot id is memoized in each isolate for 60 s.
-* **Storage:** an estimated ~100 MB.
+* **Writes:** see the summary of the latest refresh (about 15k rows per day).
+* **Reads per cache miss** (every response is cached at the edge for a week per
+  snapshot, and in the browser for 5 minutes):
+  * `/api/meta`: 5. `/api/catalogue`: ~25. `/api/ranks?m=`: 2-3.
+  * `/api/vn/:id`: 1. `/api/user/:uid`: 1-2. `/api/user-lookup`: 1.
+  * `/api/joint/:a/:b`: 1-10 (two voter shards).
+  * `/api/notes/vn/:idx`: 1-15. `/api/user/:uid/notes`: 1-2.
+  * The snapshot id is memoized in each isolate for 60 s (2 rows).
+  * The app requests `/api/meta` and `/api/catalogue` once at startup; every
+    later page reuses them.
 * **Import size:** D1 accepts files up to 5 GB.
 
 Edge caching via the Cache API only works on a custom domain, not on
