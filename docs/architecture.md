@@ -4,84 +4,103 @@
 
 The previous design uploaded per-user votes (`ulist`, one row per user × VN,
 millions of rows) to Supabase and planned to compute or serve rankings from
-there. Raw votes are only needed to *build* the partial order network; the site
-only ever needs the results. Shipping inputs instead of outputs is what blew
-through a small instance's storage.
+there. Raw votes are only needed to *build* things; the site only ever needs
+the results. Shipping inputs instead of outputs is what blew through a small
+instance's storage.
 
 ## Data flow
 
 ```
 dl.vndb.org dump (daily, ~08:00 UTC)
   └─ GitHub Actions refresh.yml (12:07 UTC)
-       ├─ extract 10 tables (~0.8 GB) from the 190 MB .tar.zst
-       ├─ pipeline/ (python -m vndb_rank)
-       │    extract.py    catalogue (VNs with >= 30 votes) + one streaming pass over ulist_vns
-       │    pairs.py      N x N pair counts (pv, nv, tv) + mean votes / sample percentiles
-       │    methods.py    8 PONet methods, 40 rankit methods, 8 Borda merges, + VNDB reference
+       ├─ extract 10 tables from the 190 MB .tar.zst
+       ├─ fetch yesterday's rank history from D1 (`SELECT id, history FROM vn`)
+       ├─ pipeline/ (python -m vndb_rank, ~10 min)
+       │    extract.py    catalogue (VNs with >= 30 votes), users, one streaming pass over ulist_vns
+       │    analysis.py   per-VN rating analysis
+       │    pairs.py      N x N pair counts + mean votes / sample percentiles
+       │    methods.py    8 PONet, 40 rankit, 8 Borda methods + VNDB reference
        │    neighbors.py  per-VN head-to-head opponents
-       │    export.py     snapshot.sql
+       │    cf.py         similar users, recommendations, similar VNs
+       │    storage.py    binary pair blocks, user shards, history
+       │    export.py     snapshot.sql (schema + data + table swap)
        └─ wrangler d1 execute --remote --file snapshot.sql
-Cloudflare D1  <──  Worker (Hono, worker/index.ts)  <──  React SPA (static assets)
+Cloudflare D1  <──  Worker (Hono, web/worker/index.ts)  <──  React SPA (static assets)
 ```
 
-## Schema (`web/migrations/0001_init.sql`)
+Votes of users VNDB flags `ign_votes` are dropped everywhere. On the
+2026-10-06 dump that removed ~2.2M of 7.1M comparable pairs.
 
-| table | rows (2026-10 dump) | written per refresh |
+## Schema (defined in `pipeline/vndb_rank/export.py`)
+
+Numbers from the 2026-10-06 dump:
+
+| table | rows | what one row holds |
 | --- | --- | --- |
-| `vn` | ~7.9k (VNs with >= 30 votes) | all |
-| `producer` | developers referenced by `vn` | all |
-| `meta` | 4 (`snapshot`, `info`, `stats`, `kendall`) | all |
+| `vn` | 7,945 | one VN: display fields + JSON columns `ranks` (57 methods), `analysis`, `neighbors`, `similar`, `relations`, `history` |
+| `producer` | 2,410 | one developer |
+| `pair_block` | 7,948 | all pairs (a, b > a) for one `a` as `b,pv,nv,tv` little-endian uint16, sorted by b (split at 40 KB) |
+| `user_block` | 2,048 | JSON `{uid: {name, votes, similar, recs}}` for users with `uid % 2048 == shard`; votes are base64 `(vn idx uint16, vote uint8)` |
+| `user_name` | 64 | JSON `{lower(username): uid}` for `fnv1a(name) % 64 == shard` |
+| `meta` | 4 | `snapshot`, `info`, `stats`, `kendall` |
+
+Total: **20,419 rows** and a 147 MB SQL file; an estimated ~100 MB in D1 (pair blocks are 39 MB of it).
 
 Design choices:
 
-* **Denormalize what is read together.** A VN page needs that VN's rank under
-  all 57 methods and its head-to-head list. A normalized `rank(method, vid)`
-  table would be ~450k rows and a pair table several million, and both are
-  rewritten on every refresh. As JSON columns on `vn` they cost one row write
-  per VN and one row read per page view.
+* **One row read per page.** Everything a VN page needs is on its `vn` row; a
+  user page reads one shard; a pair lookup reads two `vn.idx` values and one
+  pair block. Rows written per refresh stay fixed no matter how many users or
+  pairs there are, because many small records share one row.
+* **Binary where it pays.** 4.9M pairs as JSON would be ~150 MB; packed they
+  are 39 MB. `vn.idx` (the VN's position in this snapshot) keeps pair entries
+  and user votes at 2 bytes per VN reference.
 * **No secondary indexes.** Every query is a primary-key lookup or a full scan
-  of `vn` (the ranking list). Indexes would multiply rows written on refresh
-  and save nothing.
+  of `vn` (catalogue / ranks). Indexes would only add writes.
 * **The raw data stays offline.** Votes and the N² matrices live only in the
-  pipeline's memory (~3 GB for 8k VNs on a 16 GB GitHub runner).
+  pipeline's memory (a few GB on a 16 GB GitHub runner).
 
-## Refresh without a transaction
+## Refresh: build, then swap
 
-D1 rejects `BEGIN`/`COMMIT` in imported files, so `snapshot.sql`:
+D1 rejects `BEGIN`/`COMMIT` in imported files. `snapshot.sql` therefore
+creates every table as `<name>__next`, fills it, and only at the end runs
+`DROP TABLE <name>; ALTER TABLE <name>__next RENAME TO <name>` for each table,
+with `meta` (holding the snapshot id) last. Each row is written exactly once,
+readers see either the old or the new data, and schema changes ship with the
+data (there are no separate migrations).
 
-1. upserts every `vn` / `producer` row stamped with the new snapshot id,
-2. deletes rows whose snapshot differs (VNs that dropped out),
-3. writes `meta.snapshot` last.
-
-The Worker includes the snapshot id in every edge-cache key, so the switch to
-new data happens atomically from a reader's point of view once step 3 lands.
-During the few seconds of the import, an uncached request may see a mix of old
-and new rows, which is acceptable for this site.
+The Worker includes the snapshot id in every edge-cache key, so a refresh
+simply starts using new cache entries.
 
 ## Free-tier budget (Workers Free: 100k rows written, 5M rows read per day, 500 MB per DB)
 
-* **Writes:** a refresh writes ~N + producers + 4 rows (upserts may count
-  double), roughly 20-25k, well below 100k/day. Daily refreshes are fine.
-* **Reads:**
-  * `/api/ranking?m=` scans `vn` and joins `producer`, ~2N rows per cache miss.
-    The response is cached at the edge per (snapshot, method) for a week, and
-    in the browser for 5 minutes.
-  * `/api/vn/:id` reads 1 + up to ~60 rows (neighbors and relations).
+* **Writes:** ~20k per daily refresh.
+* **Reads per cache miss:**
+  * `/api/catalogue`: ~2N (vn + producer join); `/api/ranks?m=`: N.
+    Both are cached at the edge for a week per snapshot, and the browser
+    joins them, so switching methods or adding comparison columns only
+    fetches the small per-method rank list.
+  * `/api/vn/:id`: 1 + up to ~60 (neighbors, relations, similar titles).
+  * `/api/pair/:a/:b`: 2 + 1-2. `/api/user/:uid`: 1-2. `/api/user-lookup`: 1.
   * The snapshot id is memoized in each isolate for 60 s.
-* **Storage:** ~4 KB per VN row (ranks + neighbors JSON) → ~35-40 MB.
+* **Storage:** an estimated ~100 MB.
+* **Import size:** D1 accepts files up to 5 GB.
 
 Edge caching via the Cache API only works on a custom domain, not on
 `*.workers.dev`.
 
-## Pipeline performance
+## Collaborative filtering (cf.py)
 
-* `pairs.py` loops over users (one vectorized `triu_indices` block each) and
-  accumulates into dense N x N arrays: 3 x int32 counts + 8 x float32 sums.
-* The rankit methods dominate the runtime (each builds a `Table` by iterating
-  rows in Python). `--skip-rankit` computes only the PONet methods for quick
-  iterations.
-* Users' items are processed in ascending matrix-index order so every pair lands
-  in the upper triangle (the legacy script lost about half the comparisons here).
+* Votes are mean-centered per user; similarity is cosine over centered
+  vectors times `common / (common + 10)`, requiring >= 3 common VNs.
+* Users with >= 5 ranked votes get a page (55,778); users with >= 15 are
+  eligible as neighbors (31,483). Each user's 30 nearest neighbors predict
+  unvoted VNs: `mean + Σ s·dev / Σ s`, damped by `support / (support + 3)`,
+  capped at 10, and requiring >= 3 supporting neighbors.
+* Similar VNs use the same centered cosine between VN columns
+  (`common / (common + 20)`, >= 10 common voters).
+* Computed in blocks of 2,000 users with dense candidate matrices; ~80 s on
+  a GitHub runner.
 
 ## Adding a ranking method
 

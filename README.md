@@ -67,13 +67,25 @@ VNDB dump ──► pipeline/ (Python) ──► snapshot.sql ──► Cloudfla
 
 ### 为什么从 Supabase 换到 D1 之后放得下
 
-旧方案把逐用户评分（`ulist`，数百万行）整个上传到数据库。新方案中原始评分和 N² 的作品对矩阵只存在于离线管线里，数据库只保存网站真正需要读取的结果：
+旧方案把逐用户评分（`ulist`，数百万行）整个上传到数据库。新方案中原始评分和 N² 的作品对矩阵只在离线管线里计算，数据库只保存网站需要读取的结果，并且按「一次读取一行」打包：
 
-- `vn`：每部进入排名的作品一行（约 8,000 行），所有方法的排名放在一个 JSON 列中，「正面交锋」列表放在另一个 JSON 列中；
-- `producer`：被引用到的开发商（约 3,000 行）；
-- `meta`：快照编号、方法列表、统计数据、方法一致性矩阵。
+| 表 | 行数（2026-10 转储） | 内容 |
+| --- | --- | --- |
+| `vn` | 7,945 | 每部作品一行：57 种方法的排名、评分分析、正面交锋、相似作品、排名历史（JSON 列） |
+| `producer` | 2,410 | 开发商 |
+| `pair_block` | 7,948 | 全部 489 万对可比较作品的胜负数据，每对 8 字节二进制，任意两部作品都能精确对比 |
+| `user_block` | 2,048 | 55,778 位用户的评分、相似用户和推荐，按 `uid % 2048` 分片 |
+| `user_name` | 64 | 用户名 → uid 索引 |
+| `meta` | 4 | 快照编号、方法列表、统计数据、方法一致性矩阵 |
 
-一次完整更新只写入约 2 万行（D1 免费额度为每天 10 万行写入），数据库约 40 MB（免费额度单库 500 MB）。详见 [docs/architecture.md](docs/architecture.md)。
+每日更新共写入约 2 万行（D1 免费额度为每天 10 万行），数据库预计约 100 MB（免费额度单库 500 MB）。导入脚本先建好新表、最后一次性替换旧表，读者不会看到新旧混合的数据。详见 [docs/architecture.md](docs/architecture.md)。
+
+### 功能
+
+- **排行**：57 种方法任选，可并排对比最多 3 种方法、自选显示列、导出 CSV；按语言、长度、年份、票数、开发商筛选；「年度最佳」「与 VNDB 的分歧」「排名变动」分页。
+- **作品页**：概览、评分分析（分布、每年评分、列表状态、评分者心中的位置、评分者偏好）、各方法排名与排名历史、与任意作品的正面交锋、「喜欢它的人也喜欢」。
+- **用户页**：评分统计与口味分析（与 VNDB 评分的相关性、比大家更喜欢/更不喜欢的作品）、全部评分、基于相似用户的推荐、相似用户。只收录在进入排名的作品上至少有 5 个评分的用户。
+- **对比**：任意两部作品或两位用户并排对比。
 
 ## 使用方法
 
@@ -86,8 +98,7 @@ cd web
 npm install
 npx wrangler login
 npx wrangler d1 create vndb          # 把输出的 database_id 填入 web/wrangler.jsonc
-npm run db:migrate:remote
-npm run deploy                       # 部署 Worker 和前端
+npm run deploy                       # 部署 Worker 和前端；表结构由每日导入的快照创建
 ```
 
 自定义域名：在 `web/wrangler.jsonc` 中取消注释 `routes` 并填入域名（域名需已托管在 Cloudflare），或在 Cloudflare 控制台的 Worker → Settings → Domains & Routes 中添加。注意 Workers 的边缘缓存（Cache API）只在自定义域名上生效，`*.workers.dev` 上每次请求都会读数据库。
@@ -115,7 +126,6 @@ npm run deploy                       # 部署 Worker 和前端
 ```bash
 cd web
 npm install
-npm run db:migrate:local
 npm run db:seed:local
 npm run dev                          # http://localhost:5173
 ```
@@ -128,7 +138,7 @@ mkdir -p db && tar -I zstd -xf db.tar.zst -C db && rm db.tar.zst
 
 cd pipeline
 pip install -r requirements.txt
-python -m vndb_rank --dump ../db --out out          # 加 --skip-rankit 只算 PONet 方法，快很多
+python -m vndb_rank --dump ../db --out out          # 约 10 分钟；--skip-rankit / --skip-users 可跳过耗时步骤
 npx --prefix ../web wrangler d1 execute vndb --local --file out/snapshot.sql   # 导入本地 D1
 python -m pytest                                     # 测试（使用合成数据）
 ```
@@ -142,6 +152,7 @@ python -m pytest                                     # 测试（使用合成数�
 - Elo 的评分被截断为整数，且按人数放大的更新在热门作品对上会发散；现改为每对作品一场比赛、以偏好比例为结果的标准 Elo。
 - 熵加权方法的归一化项符号错误；无随机种子的「VI」方法替换为 Bradley–Terry（MM 算法）。
 - 「正面交锋」各类别现在分别在所有作品对中选取，而不是只在共同评分最多的 10 部中选取。
+- 排除了被 VNDB 标记为忽略评分（`ign_votes`）的用户。这些账号贡献了约 220 万对作品比较（总数从 711 万降到 489 万），对排名影响明显。
 
 ## 许可
 
