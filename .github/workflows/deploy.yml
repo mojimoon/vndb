@@ -1,5 +1,6 @@
 # Deploys the Worker + static site on pushes to main (the daily snapshot import owns the D1 schema).
-# Needs repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+# Needs repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, and the
+# repository variable D1_DATABASE_ID (from `npx wrangler d1 create vndb`).
 name: Deploy
 
 on:
@@ -34,5 +35,10 @@ jobs:
             echo "::error::Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets (see README)."
             exit 1
           fi
+      - name: Configure D1 database id
+        working-directory: .
+        env:
+          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID || secrets.D1_DATABASE_ID }}
+        run: .github/scripts/configure-d1.sh
       - run: npm ci
       - run: npm run deploy

@@ -1,7 +1,7 @@
 # Daily: download the VNDB dump, recompute all rankings, import into D1.
 #
 # Needs repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID and the
-# real database_id in web/wrangler.jsonc. Without the secrets the job still runs
+# repository variable D1_DATABASE_ID. Without the secrets the job still runs
 # the pipeline and uploads snapshot.sql as an artifact, but skips the import.
 name: Refresh rankings
 
@@ -65,6 +65,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+
+      - name: Configure D1 database id
+        if: env.HAS_CLOUDFLARE == 'true'
+        env:
+          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID || secrets.D1_DATABASE_ID }}
+        run: .github/scripts/configure-d1.sh
 
       - name: Fetch previous rank history from D1
         if: env.HAS_CLOUDFLARE == 'true'

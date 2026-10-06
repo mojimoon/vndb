@@ -97,7 +97,7 @@ VNDB dump ──► pipeline/ (Python) ──► snapshot.sql ──► Cloudfla
 cd web
 npm install
 npx wrangler login
-npx wrangler d1 create vndb          # 把输出的 database_id 填入 web/wrangler.jsonc
+npx wrangler d1 create vndb          # 记下输出的 database_id（之后可用 npx wrangler d1 list 查看）
 npm run deploy                       # 部署 Worker 和前端；表结构由每日导入的快照创建
 ```
 
@@ -113,6 +113,8 @@ npm run deploy                       # 部署 Worker 和前端；表结构由每
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | 上面创建的 Token |
 | `CLOUDFLARE_ACCOUNT_ID` | 控制台 Workers & Pages 页面右侧的 Account ID |
+
+并在同一页面的 **Variables** 标签页添加变量 `D1_DATABASE_ID`（值为上面 `wrangler d1 create` 输出的 database_id）。工作流会在运行前把它写入 `web/wrangler.jsonc`，所以不需要修改并提交配置文件；本地手动部署时则需要把它填入 `web/wrangler.jsonc`。
 
 之后：
 
