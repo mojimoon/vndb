@@ -28,7 +28,7 @@ def make_fake_dump(out: Path, n_vns: int = 300, n_users: int = 2000, seed: int =
     rng = np.random.default_rng(seed)
     db = out / "db"
     db.mkdir(parents=True, exist_ok=True)
-    (out / "TIMESTAMP").write_text("2026-10-05T04:00:00Z\n")
+    (out / "TIMESTAMP").write_text("2026-10-05 08:00:25+00\n")
 
     n_total = int(n_vns * 1.3)  # some VNs will fall below min_vote
     quality = rng.normal(7, 1.1, n_total)
@@ -66,12 +66,12 @@ def make_fake_dump(out: Path, n_vns: int = 300, n_users: int = 2000, seed: int =
         name = " ".join(rng.choice(SYLLABLES, rng.integers(2, 4)))
         kana = "".join(rng.choice(KANA, rng.integers(2, 4)))
         han = "".join(rng.choice(HAN, rng.integers(2, 4)))
-        alias = f"{han}\\n{name.upper()}" if rng.random() < 0.5 else "\\N"
+        alias = f"{han}\\n{name.upper()}" if rng.random() < 0.5 else ""  # real dump: empty, not \\N
         rating = int(round(np.clip(quality[v], 1, 10) * 100)) if counts[v] else "\\N"
         img = f"cv{v + 1000}" if rng.random() < 0.9 else "\\N"
-        vn_rows.append([vid, img, "\\N", olangs[v], "\\N", str(counts[v]), str(rating), str(rating), str(rng.integers(0, 6)), "0", alias, "\\N", "A story.\\nWith lines."])
+        vn_rows.append([vid, img, "\\N", olangs[v], str(counts[v]), str(rating), str(rating), "\\N", "0", str(rng.integers(0, 6)), "0", alias, "A story.\\nWith lines."])
         if img != "\\N":
-            img_rows.append([img, "256", "400", "10", str(int(rng.choice([0, 0, 0, 40, 120, 190]))), "\\N", "0", "\\N", "\\N", "\\N"])
+            img_rows.append([img, "256", "400", "10", str(int(rng.choice([0, 0, 0, 40, 120, 190]))), "0", "0", "0", "1"])
         if olangs[v] == "ja":
             title_rows.append([vid, "ja", "t", kana, name.title()])
         else:
@@ -93,17 +93,19 @@ def make_fake_dump(out: Path, n_vns: int = 300, n_users: int = 2000, seed: int =
                 rp_rows.append([f"r{rid}", f"p{rng.integers(1, n_prod + 1)}", "f", "t"])
     rel_dates = [[f"r{i}", "\\N", "ja", str(rng.choice([int(f"{rng.integers(1995, 2026)}{rng.integers(1, 13):02d}{rng.integers(1, 29):02d}"), 99999999, 20200099]))] for i in range(1, rid + 1)]
 
-    _write(db, "vn", ["id", "image", "c_image", "olang", "l_wikidata", "c_votecount", "c_rating", "c_average", "length", "devstatus", "alias", "l_renai", "description"], vn_rows)
+    # Headers mirror the real dump as of 2026-10 (see .github/workflows/dump-probe.yml).
+    _write(db, "vn", ["id", "image", "c_image", "olang", "c_votecount", "c_rating", "c_average", "c_length", "c_lengthnum", "length", "devstatus", "alias", "description"], vn_rows)
     _write(db, "vn_titles", ["id", "lang", "official", "title", "latin"], title_rows)
     _write(db, "vn_relations", ["id", "vid", "relation", "official"], rel_rows)
-    _write(db, "releases", ["id", "gtin", "olang", "released"], rel_dates)
+    _write(db, "releases", ["id", "gtin", "olang", "released"], rel_dates)  # real file has 25 columns
     _write(db, "releases_vn", ["id", "vid", "rtype"], rv_rows)
     _write(db, "releases_producers", ["id", "pid", "developer", "publisher"], rp_rows)
-    _write(db, "images", ["id", "width", "height", "c_votecount", "c_sexual_avg", "c_sexual_stddev", "c_violence_avg", "c_violence_stddev", "c_weight", "c_uids"], img_rows)
+    _write(db, "images", ["id", "width", "height", "c_votecount", "c_sexual_avg", "c_sexual_stddev", "c_violence_avg", "c_violence_stddev", "c_weight"], img_rows)
     _write(db, "producers", ["id", "type", "lang", "name", "latin", "alias", "description"], [
         [f"p{p}", "co", "ja", f"Studio {''.join(rng.choice(KANA, 2))}", f"Studio {p}", "\\N", "\\N"] for p in range(1, n_prod + 1)
     ])
-    _write(db, "users", ["id", "username"], [[f"u{u}", f"user{u}"] for u in range(1, n_users + 1)])
+    _write(db, "users", ["id", "ign_votes", "perm_imgvote", "perm_tag", "perm_lengthvote", "username"],
+           [[f"u{u}", "f", "t", "t", "t", f"user{u}"] for u in range(1, n_users + 1)])
     return out
 
 
