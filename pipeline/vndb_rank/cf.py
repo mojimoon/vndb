@@ -6,7 +6,7 @@
 * Recommendations (user-based CF): for each user, the k most similar users
   vote on VNs the user hasn't voted on; the prediction is the user's own mean
   plus the similarity-weighted average of the neighbors' deviations from
-  their means. Only VNs rated by at least ``min_support`` neighbors qualify.
+  their means, damped by support / (support + 3) and capped at 10. Only VNs rated by at least ``min_support`` neighbors qualify.
 * Similar VNs ("people who liked this also liked"): the same centered cosine
   between VN columns.
 
@@ -36,6 +36,7 @@ class CFConfig:
     similar_users: int = 10        # shown on the user page
     recommendations: int = 20
     min_support: int = 3           # neighbors who must have voted on a recommended VN
+    support_damping: float = 3.0   # prediction deviation is scaled by support / (support + this)
     min_common: int = 3            # common VNs for two users to be compared
     user_shrink: float = 10.0
     item_shrink: float = 20.0
@@ -126,10 +127,14 @@ def build_users(votes: Votes, n_items: int, names: dict[int, str], cfg: CFConfig
         den = np.asarray(W @ Bc)
         support = np.asarray((W > 0).astype(np.float32) @ Bc)
         with np.errstate(invalid="ignore", divide="ignore"):
-            pred = mean[start:stop, None] + num / den
+            # Damp the neighbors' opinion when few of them voted on the title,
+            # so well-supported recommendations come first.
+            dev = num / den * (support / (support + cfg.support_damping))
+            pred = np.minimum(mean[start:stop, None] + dev, 10.0)
         pred[(support < cfg.min_support) | (den <= 0)] = -np.inf
         pred[Bb.toarray() > 0] = -np.inf  # already voted
-        rec_idx, rec_val = _top_k(pred, cfg.recommendations)
+        rec_idx, rec_val = _top_k(pred + support * 1e-4, cfg.recommendations)  # support breaks ties
+        rec_val = np.take_along_axis(pred, rec_idx, axis=1)
 
         for r in range(b):
             u = start + r

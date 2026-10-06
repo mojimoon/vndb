@@ -42,3 +42,26 @@ export function normalizeQuery(q: string): string {
 export function coverUrl(id: number): string {
   return `https://t.vndb.org/cv/${String(id % 100).padStart(2, "0")}/${id}.jpg`;
 }
+
+/** Pipeline day number (days since 2000-01-01) -> "YYYY-MM-DD". */
+export function dayToDate(day: number): string {
+  return new Date(Date.UTC(2000, 0, 1) + day * 86_400_000).toISOString().slice(0, 10);
+}
+
+export const pct = (x: number, digits = 0) => `${(x * 100).toFixed(digits)}%`;
+
+export function pearson(xs: number[], ys: number[]): number | null {
+  const n = xs.length;
+  if (n < 3) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0;
+  let sxx = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+    syy += (ys[i] - my) ** 2;
+  }
+  return sxx && syy ? sxy / Math.sqrt(sxx * syy) : null;
+}

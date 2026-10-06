@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, ScrollRestoration } from "react-router";
+import { NavLink, Outlet, ScrollRestoration, useLocation } from "react-router";
 import { useI18n } from "../lib/i18n";
 import { useMeta } from "../lib/api";
 
@@ -34,10 +34,11 @@ export default function Layout() {
   const { t, lang, setLang } = useI18n();
   const [theme, setTheme] = useTheme();
   const meta = useMeta();
+  const location = useLocation();
   const next: Theme = theme === "system" ? "light" : theme === "light" ? "dark" : "system";
 
   const link = ({ isActive }: { isActive: boolean }) =>
-    `whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:px-3 ${
+    `whitespace-nowrap rounded-md px-2 py-1.5 text-sm font-medium transition-colors sm:px-3 ${
       isActive ? "bg-surface-2 text-ink" : "text-ink-2 hover:text-ink"
     }`;
 
@@ -49,9 +50,15 @@ export default function Layout() {
             <img src="/favicon.svg" alt="" className="h-6 w-6" />
             <span className="hidden sm:inline">VNDB Ranking+</span>
           </NavLink>
-          <nav className="flex items-center gap-1">
-            <NavLink to="/" end className={link}>
+          <nav className="-my-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1 sm:gap-1">
+            <NavLink to="/" className={({ isActive }) => link({ isActive: isActive && !/^\/(vn|user|compare|methods|stats)/.test(location.pathname) })}>
               {t("nav.ranking")}
+            </NavLink>
+            <NavLink to="/user" className={link}>
+              {t("nav.users")}
+            </NavLink>
+            <NavLink to="/compare" className={link}>
+              {t("nav.compare")}
             </NavLink>
             <NavLink to="/methods" className={link}>
               {t("nav.methods")}
@@ -60,11 +67,11 @@ export default function Layout() {
               {t("nav.stats")}
             </NavLink>
           </nav>
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
             <button
               type="button"
               onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-              className="rounded-md px-2.5 py-1.5 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink"
+              className="rounded-md px-2 py-1.5 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink"
               aria-label="Switch language"
             >
               {lang === "zh" ? "EN" : "中文"}
