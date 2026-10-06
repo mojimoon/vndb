@@ -1,6 +1,6 @@
-import { pct } from "../../lib/format";
+import { decileLabels, pct, scoreLabels } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
-import { BarChart, HBars, LineChart } from "../../components/Charts";
+import { BarChart, HBars, cumulativeLine } from "../../components/Charts";
 import { Card, Stat } from "../../components/VnLink";
 import { useVnContext } from "./VnLayout";
 
@@ -9,7 +9,6 @@ export default function Ratings() {
   const { vn } = useVnContext();
   const a = vn.analysis;
   const labels = [1, 2, 3, 4, 5, 6].map((k) => ({ label: t(`label.${k}` as never), value: a.labels[String(k)] ?? 0 })).filter((d) => d.value > 0);
-  const years = a.years.map(([y, n, m]) => ({ year: y, n, m }));
   return (
     <div className="space-y-4">
       <section className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -20,32 +19,43 @@ export default function Ratings() {
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title={t("vn.ratings.dist")}>
-          <BarChart data={a.hist.map((y, i) => ({ x: String(i + 1), y }))} label={t("vn.ratings.dist")} />
-        </Card>
-        <Card title={t("vn.ratings.labels")}>
-          <HBars data={labels} />
+          <BarChart
+            data={a.hist.map((y, i) => ({ x: scoreLabels[i], y }))}
+            label={t("vn.ratings.dist")}
+            barName={t("vn.votes")}
+            line={cumulativeLine(a.hist, t("chart.cumulative"))}
+          />
         </Card>
         {a.sp && (
           <Card title={t("vn.ratings.sp")}>
             <p className="mb-2 text-xs text-ink-2">{t("vn.ratings.spHint", { p: pct(a.sp.mean) })}</p>
-            <BarChart data={a.sp.hist.map((y, i) => ({ x: `${i * 20}–${i * 20 + 20}%`, y }))} label={t("vn.ratings.sp")} height={150} />
+            <BarChart
+              data={a.sp.hist.map((y, i) => ({ x: decileLabels[i], y }))}
+              label={t("vn.ratings.sp")}
+              barName={t("vn.votes")}
+              line={cumulativeLine(a.sp.hist, t("chart.cumulative"))}
+            />
           </Card>
         )}
+        {a.years.length > 1 && (
+          <Card title={t("vn.ratings.byYear")} className="lg:col-span-2">
+            <BarChart
+              data={a.years.map(([y, n]) => ({ x: String(y), y: n }))}
+              label={t("vn.ratings.byYear")}
+              barName={t("stats.count")}
+              line={{ name: t("user.mean"), values: a.years.map(([, , m]) => m), format: (v) => v.toFixed(2) }}
+              height={200}
+            />
+          </Card>
+        )}
+        <Card title={t("vn.ratings.labels")}>
+          <HBars data={labels} />
+        </Card>
         {a.bias !== null && (
           <Card title={t("vn.ratings.bias")}>
             <p className="text-sm text-ink-2">{t("vn.ratings.biasHint", { b: (a.bias > 0 ? "+" : "") + a.bias.toFixed(2) })}</p>
             <BiasGauge value={a.bias} />
           </Card>
-        )}
-        {years.length > 1 && (
-          <>
-            <Card title={t("vn.ratings.byYear")}>
-              <BarChart data={years.map((y) => ({ x: String(y.year), y: y.n }))} label={t("vn.ratings.byYear")} height={150} />
-            </Card>
-            <Card title={t("vn.ratings.meanByYear")}>
-              <LineChart data={years.map((y) => ({ x: String(y.year), y: y.m }))} format={(v) => v.toFixed(2)} label={t("vn.ratings.meanByYear")} height={150} />
-            </Card>
-          </>
         )}
       </div>
     </div>

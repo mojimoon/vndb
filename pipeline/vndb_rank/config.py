@@ -19,6 +19,8 @@ class Config:
     min_user_votes: int = 5
     # Skip user pages / recommendations / similar VNs (collaborative filtering).
     skip_users: bool = False
+    # Do not export users' list notes (shown as short reviews on VN and user pages).
+    skip_notes: bool = False
     # Seed for anything stochastic, so snapshots are reproducible.
     seed: int = 0
 

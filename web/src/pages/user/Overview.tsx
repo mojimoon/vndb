@@ -1,6 +1,7 @@
 import { useI18n } from "../../lib/i18n";
 import { BarChart } from "../../components/Charts";
 import { Card, Stat, VnLink } from "../../components/VnLink";
+import { useShowMore } from "../../components/ShowMore";
 import { useUserContext, type JoinedVote } from "./UserLayout";
 
 const signed = (x: number | null, d = 2) => (x === null ? "—" : `${x > 0 ? "+" : ""}${x.toFixed(d)}`);
@@ -9,8 +10,8 @@ export default function UserOverview() {
   const { t } = useI18n();
   const { votes, summary: s } = useUserContext();
   const withDiff = votes.filter((v) => v.diff !== null);
-  const loved = [...withDiff].sort((a, b) => b.diff! - a.diff!).slice(0, 8).filter((v) => v.diff! > 0);
-  const hated = [...withDiff].sort((a, b) => a.diff! - b.diff!).slice(0, 8).filter((v) => v.diff! < 0);
+  const loved = [...withDiff].sort((a, b) => b.diff! - a.diff!).filter((v) => v.diff! > 0);
+  const hated = [...withDiff].sort((a, b) => a.diff! - b.diff!).filter((v) => v.diff! < 0);
   return (
     <div className="space-y-4">
       <section className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -32,6 +33,7 @@ export default function UserOverview() {
 
 function DiffList({ title, rows }: { title: string; rows: JoinedVote[] }) {
   const { t } = useI18n();
+  const [visible, more] = useShowMore(rows, 8, 20);
   return (
     <Card title={title}>
       <table className="w-full text-sm">
@@ -44,7 +46,7 @@ function DiffList({ title, rows }: { title: string; rows: JoinedVote[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((v) => (
+          {visible.map((v) => (
             <tr key={v.vn.id} className="border-t border-line">
               <td className="max-w-0 truncate py-1.5 pr-2">
                 <VnLink vn={v.vn} released={v.vn.released} />
@@ -56,6 +58,7 @@ function DiffList({ title, rows }: { title: string; rows: JoinedVote[] }) {
           ))}
         </tbody>
       </table>
+      {more}
     </Card>
   );
 }

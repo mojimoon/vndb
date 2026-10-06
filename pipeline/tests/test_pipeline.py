@@ -12,9 +12,9 @@ from vndb_rank.__main__ import run
 from vndb_rank.config import Config
 from vndb_rank.cf import decode_votes
 from vndb_rank.export import insert_statements, MAX_STATEMENT_BYTES
-from vndb_rank.storage import fnv1a, lookup_pair, merge_history, rank_trend
+from vndb_rank.storage import fnv1a, merge_history, rank_trend
 from vndb_rank.extract import Votes, normalize_search, to_ten_scale
-from vndb_rank.methods import po_bradley_terry, po_classical, po_elo, po_entropy, po_random_walk
+from vndb_rank.methods import po_bradley_terry, po_classical, po_elo, po_entropy
 from vndb_rank.neighbors import build_neighbors
 from vndb_rank.pairs import build_pairs, sample_percentile
 
@@ -81,7 +81,7 @@ def test_methods_prefer_dominant_item():
     p = build_pairs(make_votes(rows), 3, min_common=5)
     for name, s in po_classical(p, 3).items():
         assert s[0] > s[1] > s[2], name
-    for fn in (po_bradley_terry, po_elo, po_entropy, po_random_walk):
+    for fn in (po_bradley_terry, po_elo, po_entropy):
         s = fn(p, 3)
         assert s[0] > s[1] > s[2], fn.__name__
 
@@ -147,21 +147,10 @@ def test_rankings_track_latent_quality(snapshot):
     _, _, db = snapshot
     rows = db.execute("SELECT rating, ranks FROM vn").fetchall()
     rating = [r[0] for r in rows]
-    for m in ["po_percent", "po_bt", "massey_prob", "borda_grand"]:
+    for m in ["po_percent", "po_bt", "massey_sp_ari", "borda_grand"]:
         rank = [json.loads(r[1])[m][0] for r in rows]
         rho = spearmanr(rating, rank)[0]
         assert rho < -0.6, (m, rho)  # better rating -> smaller rank number
-
-
-def test_pair_blocks_round_trip(snapshot):
-    _, _, db = snapshot
-    blocks: dict[int, bytes] = {}
-    for a, part, data in db.execute("SELECT a, part, data FROM pair_block ORDER BY a, part"):
-        blocks[a] = blocks.get(a, b"") + data
-    idx = dict(db.execute("SELECT id, idx FROM vn"))
-    for vid, nb in db.execute("SELECT id, neighbors FROM vn LIMIT 30"):
-        for other, wins, losses, common in json.loads(nb):
-            assert lookup_pair(blocks, idx[vid], idx[other]) == (wins, losses, common)
 
 
 def test_vn_analysis_and_history(snapshot):
@@ -219,3 +208,60 @@ def test_storage_helpers():
     assert len([p for p in merged if today - p[0] <= 90]) == 91
     assert all(today - p[0] <= 730 for p in merged)
     assert rank_trend([[today - 8, 10, 0], [today, 4, 0]], today) == 6
+
+
+def _doc(db, key):
+    return json.loads("".join(r[0] for r in db.execute("SELECT data FROM doc WHERE key = ? ORDER BY part", (key,))))
+
+
+def test_prebuilt_docs(snapshot):
+    _, summary, db = snapshot
+    cat = _doc(db, "catalogue")
+    assert len(cat["rows"]) == summary["rows"]["vn"]
+    row = dict(zip(cat["columns"], cat["rows"][0]))
+    assert row["idx"] == 0 and row["title"] and "search" in row
+    info = json.loads(db.execute("SELECT value FROM meta WHERE key='info'").fetchone()[0])
+    removed = {"po_rw", "massey_prob", "keener_prob", "markov_rv_sp_geo", "difference_ari"}
+    assert not removed & set(info["methods"]) and len(info["methods"]) == 40  # 39 methods + vndb
+    for m in ["borda_grand", "vndb"]:
+        r = _doc(db, f"ranks:{m}")
+        assert r["method"] == m and [x[1] for x in r["ranks"]] == sorted(x[1] for x in r["ranks"])
+        sql = dict(db.execute(f"SELECT id, json_extract(ranks, '$.{m}[0]') FROM vn"))
+        assert all(sql[i] == rank for i, rank, _ in r["ranks"])
+
+
+def test_voter_shards_give_exact_joint_counts(snapshot):
+    _, _, db = snapshot
+    from vndb_rank.storage import VOTER_SHARDS, read_voters
+    parts = lambda idx: [bytes(r[0]) for r in db.execute("SELECT data FROM vn_voters WHERE shard = ? ORDER BY part", (idx % VOTER_SHARDS,))]
+    nb = json.loads(db.execute("SELECT neighbors FROM vn WHERE idx = 0").fetchone()[0])
+    idx = dict(db.execute("SELECT id, idx FROM vn"))
+    a = read_voters(parts(0), 0)
+    n_votes = json.loads(db.execute("SELECT analysis FROM vn WHERE idx = 0").fetchone()[0])["n"]
+    assert len(a) == n_votes and (np.diff(a["uid"].astype(np.int64)) > 0).all()
+    assert ((a["spd"] <= 9)).all() and ((a["vote"] >= 10) & (a["vote"] <= 100)).all()
+    other, wins, losses, common = nb[0]
+    b = read_voters(parts(idx[other]), idx[other])
+    _, ia, ib = np.intersect1d(a["uid"], b["uid"], return_indices=True)
+    assert len(ia) == common
+    assert (a["vote"][ia] > b["vote"][ib]).sum() == wins and (a["vote"][ia] < b["vote"][ib]).sum() == losses
+
+
+def test_notes_and_leaderboards(snapshot):
+    _, summary, db = snapshot
+    rows = [r for (d,) in db.execute("SELECT data FROM vn_notes") for r in json.loads(d)]
+    assert rows and all(len(r[5]) >= 20 for r in rows)
+    users = [r for (d,) in db.execute("SELECT data FROM user_notes") for r in json.loads(d)]
+    assert 0 < len(users) <= len(rows)
+    lb = json.loads(db.execute("SELECT value FROM meta WHERE key='leaderboards'").fetchone()[0])
+    assert lb["most_votes"][0][2] >= lb["most_votes"][-1][2]
+    assert lb["highest_mean"][0][2] >= lb["lowest_mean"][0][2]
+    assert all(e[3] >= lb["min_votes"] for e in lb["highest_mean"])
+    assert lb["most_mainstream"][0][2] >= lb["most_contrarian"][0][2]
+
+
+def test_text_parts_split_on_utf8_boundaries():
+    from vndb_rank.storage import PART_TEXT_BYTES, text_parts
+    s = "天" * (PART_TEXT_BYTES // 2) + "abc"
+    parts = list(text_parts(s))
+    assert "".join(parts) == s and all(len(p.encode()) <= PART_TEXT_BYTES for p in parts)

@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { formatInt, formatScore, titles, year } from "../../lib/format";
+import { devName, formatInt, formatScore, titles, year } from "../../lib/format";
 import { langName, methodName, methodShort, useI18n, type StringKey } from "../../lib/i18n";
 import { MethodSelect } from "../../components/MethodSelect";
 import { useRanking } from "./RankingLayout";
 import type { Row } from "./data";
 
-const OPTIONAL = ["delta", "trend", "year", "votes", "rating", "lang", "length", "score"] as const;
+const OPTIONAL = ["delta", "trend", "dev", "year", "votes", "rating", "lang", "length", "score"] as const;
 type Col = (typeof OPTIONAL)[number];
-const DEFAULT_COLS: Col[] = ["delta", "year", "votes", "rating", "score"];
+const DEFAULT_COLS: Col[] = ["delta", "dev", "year", "votes", "rating", "score"];
 const PAGE_SIZES = [25, 50, 100, 200];
 
 function loadCols(): Col[] {
   try {
-    const v = JSON.parse(localStorage.getItem("rank.cols") ?? "null");
+    const v = JSON.parse(localStorage.getItem("rank.cols.v2") ?? "null");
     if (Array.isArray(v)) return v.filter((c) => (OPTIONAL as readonly string[]).includes(c));
   } catch {
     /* storage unavailable */
@@ -24,6 +24,7 @@ function loadCols(): Col[] {
 const COL_LABEL: Record<Col, StringKey> = {
   delta: "rank.col.delta",
   trend: "rank.col.trend",
+  dev: "rank.col.dev",
   year: "rank.col.year",
   votes: "rank.col.votes",
   rating: "rank.col.rating",
@@ -35,7 +36,7 @@ const COL_LABEL: Record<Col, StringKey> = {
 // Sort keys: "rank", "x:<method>", or an optional column. Ranks ascend, the rest descend.
 function sortValue(r: Row, key: string): number {
   if (key === "rank") return r.rank;
-  if (key.startsWith("x:")) return r.extra[key.slice(2)] ?? Number.MAX_SAFE_INTEGER;
+  if (key.startsWith("x:")) return r.extra[key.slice(2)]?.rank ?? Number.MAX_SAFE_INTEGER;
   switch (key) {
     case "delta":
       return -(r.vndb_rank - r.rank);
@@ -64,7 +65,7 @@ export default function RankTable() {
   const setCols = (c: Col[]) => {
     setColsState(c);
     try {
-      localStorage.setItem("rank.cols", JSON.stringify(c));
+      localStorage.setItem("rank.cols.v2", JSON.stringify(c));
     } catch {
       /* storage unavailable */
     }
@@ -90,7 +91,7 @@ export default function RankTable() {
       const s = v === null || v === undefined ? "" : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = [head, ...sorted.map((r) => [`v${r.id}`, titles(r, lang).main, r.rank, ...extras.map((m) => r.extra[m]), r.vndb_rank, year(r.released), r.votes, r.rating, r.score])];
+    const lines = [head, ...sorted.map((r) => [`v${r.id}`, titles(r, lang).main, r.rank, ...extras.map((m) => r.extra[m]?.rank), r.vndb_rank, year(r.released), r.votes, r.rating, r.score])];
     const blob = new Blob(["﻿" + lines.map((l) => l.map(esc).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -188,6 +189,7 @@ export default function RankTable() {
               <th scope="col" className="px-3 py-2 font-medium">
                 {t("rank.col.title")}
               </th>
+              {has("dev") && <th className="hidden px-3 py-2 font-medium md:table-cell">{t("rank.col.dev")}</th>}
               {has("year") && <Th k="year" className="hidden w-16 sm:table-cell">{t("rank.col.year")}</Th>}
               {has("lang") && <th className="hidden px-3 py-2 font-medium md:table-cell">{t("rank.col.lang")}</th>}
               {has("length") && <Th k="length" className="hidden md:table-cell">{t("rank.col.length")}</Th>}
@@ -200,30 +202,44 @@ export default function RankTable() {
             {rows.map((r) => {
               const { main, sub } = titles(r, lang);
               const delta = r.vndb_rank - r.rank;
-              const dev = lang === "zh" ? r.dev : r.dev_latin ?? r.dev;
+              const dev = devName(r, lang);
               return (
                 <tr key={r.id} className="border-b border-line last:border-0 hover:bg-surface-2/60">
                   <td className="tabular px-3 py-2.5 text-right font-semibold">{r.rank}</td>
-                  {extras.map((m) => (
-                    <td key={m} className="tabular px-3 py-2.5 text-right text-ink-2">
-                      {r.extra[m] ?? "—"}
-                    </td>
-                  ))}
+                  {extras.map((m) => {
+                    const x = r.extra[m];
+                    const diff = x ? r.rank - x.rank : 0; // > 0: this method ranks it higher than the primary one
+                    return (
+                      <td key={m} className="px-3 py-1.5 text-right" title={x ? `${methodName(m, lang)}: #${x.rank} · ${formatScore(x.score)}` : undefined}>
+                        <div className={`tabular font-medium ${diff > 0 ? "text-up" : diff < 0 ? "text-down" : "text-ink-2"}`}>{x?.rank ?? "—"}</div>
+                        <div className="tabular text-[11px] text-ink-3">{x ? formatScore(x.score) : ""}</div>
+                      </td>
+                    );
+                  })}
                   {has("delta") && <td className="px-3 py-2.5 text-right text-xs"><Delta d={delta} /></td>}
                   {has("trend") && <td className="hidden px-3 py-2.5 text-right text-xs sm:table-cell">{r.trend === null ? <span className="text-ink-3">–</span> : <Delta d={r.trend} />}</td>}
                   <td className="px-3 py-2.5">
                     <Link to={`/vn/${r.id}`} className="font-medium text-ink hover:text-accent-ink">
                       {main}
                     </Link>
-                    <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-ink-3">
-                      {sub && <span>{sub}</span>}
-                      {dev && r.dev_id && (
-                        <button type="button" onClick={() => update({ dev: String(r.dev_id) })} className="hover:text-ink-2 hover:underline">
-                          {dev}
-                        </button>
-                      )}
-                    </div>
+                    {sub && <div className="mt-0.5 truncate text-xs text-ink-3">{sub}</div>}
                   </td>
+                  {has("dev") && (
+                    <td className="hidden max-w-48 px-3 py-2.5 text-ink-2 md:table-cell">
+                      {r.dev_id ? (
+                        <span className="flex items-baseline gap-1.5">
+                          <Link to={`/dev/${r.dev_id}`} className="truncate hover:text-accent-ink hover:underline">
+                            {dev}
+                          </Link>
+                          <button type="button" onClick={() => update({ dev: String(r.dev_id) })} className="shrink-0 text-xs text-ink-3 hover:text-ink" title={t("rank.filterDev")} aria-label={t("rank.filterDev")}>
+                            ⧩
+                          </button>
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  )}
                   {has("year") && <td className="tabular hidden px-3 py-2.5 text-ink-2 sm:table-cell">{year(r.released) ?? "—"}</td>}
                   {has("lang") && <td className="hidden px-3 py-2.5 text-ink-2 md:table-cell">{r.olang ? langName(r.olang, lang) : "—"}</td>}
                   {has("length") && <td className="hidden px-3 py-2.5 text-ink-2 md:table-cell">{r.length ? t(`length.${r.length}` as StringKey) : "—"}</td>}

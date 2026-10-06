@@ -48,6 +48,7 @@ export interface Analysis {
   labels: Record<string, number>;
   sp: { mean: number; hist: number[] } | null;
   bias: number | null;
+  notes?: number;
 }
 
 export interface VnDetail extends TitleFields {
@@ -55,8 +56,6 @@ export interface VnDetail extends TitleFields {
   olang: string | null;
   released: number | null;
   dev_id: number | null;
-  dev: string | null;
-  dev_latin: string | null;
   image: number | null;
   image_sexual: number | null;
   length: number | null;
@@ -70,17 +69,44 @@ export interface VnDetail extends TitleFields {
   neighbors: { id: number; wins: number; losses: number; common: number }[];
   relations: { id: number; relation: string }[];
   similar: { id: number; sim: number; common: number }[];
-  others: OtherVn[];
 }
 
-export interface PairResult {
+/** Exact head-to-head and 10x10 joint distributions of two VNs (by idx). */
+export interface Joint {
   a: number;
   b: number;
   wins: number;
   losses: number;
   common: number;
-  below_threshold?: boolean;
+  raw: number[][]; // [A's vote bucket 1..10][B's]
+  sp: number[][]; // [A's sample-percentile decile][B's]
 }
+
+export interface Note {
+  uid: number;
+  name: string;
+  vote: number;
+  date: number;
+  text: string;
+  hasPage: boolean;
+}
+
+export interface NotesPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  notes: Note[];
+}
+
+export interface UserNote {
+  idx: number;
+  vote: number;
+  date: number;
+  text: string;
+}
+
+/** [uid, name, value, ranked votes, has user page] */
+export type LeaderEntry = [number, string, number, number, boolean];
 
 export interface UserData {
   uid: number;
@@ -100,6 +126,7 @@ export interface Stats {
   ranked_vns: number;
   pairs: number;
   user_pages?: number;
+  notes?: number;
   tables?: Record<string, number>;
 }
 
@@ -110,7 +137,7 @@ export interface Meta {
     day: number;
     generated_at: string;
     pipeline_version: string;
-    config: { min_vote: number; min_common_vote: number; neighbors_per_category: number; skip_rankit: boolean; min_user_votes?: number };
+    config: { min_vote: number; min_common_vote: number; neighbors_per_category: number; skip_rankit: boolean; min_user_votes?: number; skip_notes?: boolean };
     methods: string[];
     featured: string[];
     default_method: string;
@@ -118,6 +145,15 @@ export interface Meta {
   };
   stats: Stats;
   kendall: { methods: string[]; matrix: number[][] };
+  leaderboards?: {
+    min_votes: number;
+    most_votes: LeaderEntry[];
+    most_votes_year: LeaderEntry[];
+    highest_mean: LeaderEntry[];
+    lowest_mean: LeaderEntry[];
+    most_mainstream: LeaderEntry[];
+    most_contrarian: LeaderEntry[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -190,14 +226,21 @@ export interface Catalogue {
   byIdx: CatalogueItem[];
 }
 
+let catalogueMemo: { src: unknown; value: Catalogue } | null = null;
+
 export function useCatalogue(): Loadable<Catalogue> {
-  const raw = useApi<{ items: CatalogueItem[] }>("/api/catalogue");
+  const raw = useApi<{ columns: string[]; rows: unknown[][] }>("/api/catalogue");
   return useMemo<Loadable<Catalogue>>(() => {
     if (raw.state !== "ok") return raw;
-    const items = raw.data.items;
+    // Shared across components: the catalogue is ~8k rows, build the objects once.
+    if (catalogueMemo?.src === raw.data) return { state: "ok", data: catalogueMemo.value };
+    const { columns, rows } = raw.data;
+    const items = rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])) as unknown as CatalogueItem);
     const byIdx: CatalogueItem[] = [];
     for (const it of items) byIdx[it.idx] = it;
-    return { state: "ok", data: { items, byId: new Map(items.map((i) => [i.id, i])), byIdx } };
+    const value = { items, byId: new Map(items.map((i) => [i.id, i])), byIdx };
+    catalogueMemo = { src: raw.data, value };
+    return { state: "ok", data: value };
   }, [raw]);
 }
 
@@ -234,6 +277,38 @@ export function useManyRanks(methods: string[]): Loadable<Record<string, RankMap
   return state.key === key ? state.value : { state: "loading" };
 }
 
-export const useVn = (id: number) => useApi<VnDetail>(`/api/vn/${id}`);
+type RawVn = Omit<VnDetail, "neighbors" | "relations" | "similar"> & {
+  neighbors: [number, number, number, number][];
+  relations: [number, string][];
+  similar: [number, number, number][];
+};
+
+/** The worker passes the JSON columns through verbatim (compact arrays); expand them here. */
+export function useVn(id: number): Loadable<VnDetail> {
+  const raw = useApi<RawVn>(`/api/vn/${id}`);
+  return useMemo<Loadable<VnDetail>>(() => {
+    if (raw.state !== "ok") return raw;
+    const v = raw.data;
+    return {
+      state: "ok",
+      data: {
+        ...v,
+        neighbors: v.neighbors.map(([nid, wins, losses, common]) => ({ id: nid, wins, losses, common })),
+        relations: v.relations.map(([rid, relation]) => ({ id: rid, relation })),
+        similar: v.similar.map(([sid, sim, common]) => ({ id: sid, sim, common })),
+      },
+    };
+  }, [raw]);
+}
 export const useUser = (uid: number) => useApi<UserData>(`/api/user/${uid}`);
-export const usePair = (a: number | null, b: number | null) => useApi<PairResult>(a && b && a !== b ? `/api/pair/${a}/${b}` : null);
+/** a, b are catalogue idx values (not VNDB ids). */
+export const useJoint = (a: number | null | undefined, b: number | null | undefined) =>
+  useApi<Joint>(a != null && b != null && a !== b ? `/api/joint/${a}/${b}` : null);
+export const useVnNotes = (idx: number | null | undefined, page: number) => useApi<NotesPage>(idx != null ? `/api/notes/vn/${idx}?page=${page}` : null);
+export const useUserNotes = (uid: number) => useApi<{ uid: number; notes: UserNote[] }>(`/api/user/${uid}/notes`);
+
+/** Start the requests every page needs as soon as the app loads. */
+export function prefetchCore() {
+  void fetchJson("/api/meta").catch(() => {});
+  void fetchJson("/api/catalogue").catch(() => {});
+}

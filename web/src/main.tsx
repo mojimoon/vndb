@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import "./index.css";
 import { I18nProvider } from "./lib/i18n";
+import { prefetchCore } from "./lib/api";
 import Layout from "./components/Layout";
 import RankingLayout from "./pages/ranking/RankingLayout";
 import RankTable from "./pages/ranking/RankTable";
@@ -15,6 +16,10 @@ import VnRatings from "./pages/vn/Ratings";
 import VnRanks from "./pages/vn/Ranks";
 import VnVersus from "./pages/vn/Versus";
 import VnSimilar from "./pages/vn/Similar";
+import VnNotes from "./pages/vn/Notes";
+import UserNotes from "./pages/user/Notes";
+import DevList from "./pages/dev/DevList";
+import DevPage from "./pages/dev/DevPage";
 import UserSearch from "./pages/user/UserSearch";
 import UserLayout from "./pages/user/UserLayout";
 import UserOverview from "./pages/user/Overview";
@@ -53,6 +58,7 @@ const router = createBrowserRouter([
           { path: "ranks", element: <VnRanks /> },
           { path: "versus", element: <VnVersus /> },
           { path: "similar", element: <VnSimilar /> },
+          { path: "notes", element: <VnNotes /> },
         ],
       },
       { path: "user", element: <UserSearch /> },
@@ -64,8 +70,11 @@ const router = createBrowserRouter([
           { path: "votes", element: <UserVotes /> },
           { path: "recs", element: <UserRecs /> },
           { path: "similar", element: <UserSimilar /> },
+          { path: "notes", element: <UserNotes /> },
         ],
       },
+      { path: "dev", element: <DevList /> },
+      { path: "dev/:id", element: <DevPage /> },
       { path: "compare", element: <ComparePicker /> },
       { path: "compare/vn/:a/:b", element: <CompareVn /> },
       { path: "compare/user/:a/:b", element: <CompareUser /> },
@@ -75,6 +84,8 @@ const router = createBrowserRouter([
     ],
   },
 ]);
+
+prefetchCore();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

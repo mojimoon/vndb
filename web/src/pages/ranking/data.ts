@@ -5,8 +5,12 @@ import { normalizeQuery, year } from "../../lib/format";
 export interface Row extends CatalogueItem {
   rank: number;
   score: number | null;
-  extra: Record<string, number | undefined>;
+  extra: Record<string, { rank: number; score: number | null } | undefined>;
 }
+
+/** URL keys of all filters (cleared together). */
+export const FILTER_KEYS = ["q", "lang", "from", "to", "minv", "maxv", "rmin", "rmax", "dev", "len"];
+export const ADVANCED_KEYS = ["lang", "from", "to", "minv", "maxv", "rmin", "rmax", "len"];
 
 export interface Filters {
   q: string;
@@ -14,6 +18,9 @@ export interface Filters {
   from: number | null;
   to: number | null;
   minVotes: number;
+  maxVotes: number | null;
+  minRating: number | null;
+  maxRating: number | null;
   dev: number | null;
   length: number | null;
 }
@@ -25,6 +32,9 @@ export function readFilters(params: URLSearchParams): Filters {
     from: Number(params.get("from")) || null,
     to: Number(params.get("to")) || null,
     minVotes: Number(params.get("minv")) || 0,
+    maxVotes: Number(params.get("maxv")) || null,
+    minRating: Number(params.get("rmin")) || null,
+    maxRating: Number(params.get("rmax")) || null,
     dev: Number(params.get("dev")) || null,
     length: Number(params.get("len")) || null,
   };
@@ -47,7 +57,7 @@ export function useRows(method: string | null, extras: string[]): Loadable<Row[]
         ...it,
         rank: r?.rank ?? Number.MAX_SAFE_INTEGER,
         score: r?.score ?? null,
-        extra: Object.fromEntries(extras.map((m) => [m, ranks.data[m]?.get(it.id)?.rank])),
+        extra: Object.fromEntries(extras.map((m) => [m, ranks.data[m]?.get(it.id)])),
       };
     });
     rows.sort((a, b) => a.rank - b.rank || a.id - b.id);
@@ -67,6 +77,9 @@ export function applyFilters(rows: Row[], f: Filters): Row[] {
     if (f.from && (!y || y < f.from)) return false;
     if (f.to && (!y || y > f.to)) return false;
     if (f.minVotes && it.votes < f.minVotes) return false;
+    if (f.maxVotes && it.votes > f.maxVotes) return false;
+    if (f.minRating && (it.rating ?? 0) < f.minRating) return false;
+    if (f.maxRating && (it.rating ?? 0) > f.maxRating) return false;
     if (f.dev && it.dev_id !== f.dev) return false;
     if (f.length && it.length !== f.length) return false;
     return true;

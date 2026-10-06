@@ -51,8 +51,11 @@ export default function Layout() {
             <span className="hidden sm:inline">VNDB Ranking+</span>
           </NavLink>
           <nav className="-my-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1 sm:gap-1">
-            <NavLink to="/" className={({ isActive }) => link({ isActive: isActive && !/^\/(vn|user|compare|methods|stats)/.test(location.pathname) })}>
+            <NavLink to="/" className={({ isActive }) => link({ isActive: isActive && !/^\/(vn|user|dev|compare|methods|stats)/.test(location.pathname) })}>
               {t("nav.ranking")}
+            </NavLink>
+            <NavLink to="/dev" className={link}>
+              {t("nav.devs")}
             </NavLink>
             <NavLink to="/user" className={link}>
               {t("nav.users")}

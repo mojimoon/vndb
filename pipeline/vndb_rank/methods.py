@@ -8,6 +8,9 @@ Changes from the legacy research script (``research/legacy_main.py``):
 * ``po_elo`` plays one fractional-outcome match per pair (the count-weighted
   updates diverged) and keeps ratings as floats (they were truncated to ints).
 * ``po_entropy`` normalizes by the *sum* of entropies (one side was subtracted).
+* Several rankit variants were dropped (see RANKIT_RANKERS).
+* ``po_rw`` (random walk) is gone: on real data it was uncorrelated or
+  negatively correlated with every other method (Kendall tau -0.25..0.19).
 * ``po_vi`` (unseeded gradient steps whose fancy-indexed updates dropped
   duplicates) is replaced by a proper Bradley-Terry MM fit, ``po_bt``.
 * The rankit Markov variants transformed the shared input frame in place, so
@@ -26,11 +29,16 @@ from .pairs import Pairs
 
 log = logging.getLogger(__name__)
 
-PO_METHODS = ["po_total", "po_percent", "po_simple", "po_weighted", "po_rw", "po_elo", "po_entropy", "po_bt"]
+PO_METHODS = ["po_total", "po_percent", "po_simple", "po_weighted", "po_elo", "po_entropy", "po_bt"]
 RANKIT_VARIABLES = ["prob", "ari", "geo", "sp_ari", "sp_geo"]
-RANKIT_RANKERS = ["massey", "colley", "keener", "markov_rv", "markov_rdv", "markov_sdv", "od", "difference"]
-# Rankers that looked the most stable in the Kendall-tau study; used by borda_grand.
-GRAND_RANKERS = ["massey", "colley", "markov_rdv", "markov_sdv", "od", "difference"]
+# Dropped after checking them on the 2026-10 dump (Kendall tau vs. the median
+# rank of all methods; Spearman rho vs. log vote count):
+#   keener_*      tau 0.39-0.56, rho ~0.75   -> a popularity contest
+#   markov_rv_*   tau 0.42-0.62, rho ~0.77   -> same
+#   difference_*  tau 0.36-0.63; top lists are simply the most-voted titles
+#   massey_prob   tau 0.41; raw preference counts make big pairs dominate
+RANKIT_RANKERS = ["massey", "colley", "markov_rdv", "markov_sdv", "od"]
+RANKIT_EXCLUDE = {"massey_prob"}
 GRAND_VARIABLES = ["prob", "sp_ari", "sp_geo"]
 
 
@@ -51,31 +59,6 @@ def po_classical(p: Pairs, n: int) -> dict[str, np.ndarray]:
             "po_simple": avg(sign),                     # sgn(x - y)
             "po_weighted": avg(sign * np.sqrt(p.tv)),   # sgn(x - y) * sqrt(n)
         }
-
-
-def po_random_walk(p: Pairs, n: int, alpha: float = 0.85, max_iter: int = 200, eps: float = 1e-9) -> np.ndarray:
-    """PageRank-style walk where each VN passes weight towards the VNs it beats;
-    the stationary mass therefore piles up on losers, so we return 1 / mass."""
-    decided = (p.pv + p.nv).astype(np.float64)
-    ok = decided > 0
-    a, b = p.a[ok], p.b[ok]
-    mat = np.zeros((n, n))
-    np.add.at(mat, (a, b), p.pv[ok] / decided[ok])
-    np.add.at(mat, (b, a), p.nv[ok] / decided[ok])
-    rows = mat.sum(axis=1, keepdims=True)
-    dead = rows[:, 0] == 0
-    with np.errstate(invalid="ignore", divide="ignore"):
-        mat = np.where(rows > 0, mat / rows, 1.0 / n)
-    mat[dead] = 1.0 / n
-    scores = np.full(n, 1.0 / n)
-    for _ in range(max_iter):
-        last = scores
-        scores = alpha * mat.T @ scores + (1 - alpha) / n
-        if np.abs(scores - last).sum() < eps:
-            break
-    out = 1 / scores
-    out[_isolated(p, n)] = np.nan
-    return out
 
 
 def po_elo(p: Pairs, n: int, K: float = 32, base: float = 1500, divisor: float = 400,
@@ -194,7 +177,6 @@ def compute_all(p: Pairs, n: int, skip_rankit: bool = False) -> pd.DataFrame:
     out: dict[str, np.ndarray] = {}
     steps: list[tuple[str, Callable[[], np.ndarray | dict]]] = [
         ("po_classical", lambda: po_classical(p, n)),
-        ("po_rw", lambda: po_random_walk(p, n)),
         ("po_elo", lambda: po_elo(p, n)),
         ("po_entropy", lambda: po_entropy(p, n)),
         ("po_bt", lambda: po_bradley_terry(p, n)),
@@ -208,6 +190,8 @@ def compute_all(p: Pairs, n: int, skip_rankit: bool = False) -> pd.DataFrame:
         for var in RANKIT_VARIABLES:
             for rk in RANKIT_RANKERS:
                 code = f"{rk}_{var}"
+                if code in RANKIT_EXCLUDE:
+                    continue
                 log.info("method %s", code)
                 out[code] = rankit_scores(p, n, var, rk)
 
@@ -215,7 +199,7 @@ def compute_all(p: Pairs, n: int, skip_rankit: bool = False) -> pd.DataFrame:
     df["borda_po"] = borda(df[PO_METHODS])
     if not skip_rankit:
         for var in RANKIT_VARIABLES:
-            df[f"borda_{var}"] = borda(df[[f"{rk}_{var}" for rk in RANKIT_RANKERS]])
+            df[f"borda_{var}"] = borda(df[[c for rk in RANKIT_RANKERS if (c := f"{rk}_{var}") in df]])
         df["borda_sci"] = borda(df[["borda_prob", "borda_ari", "borda_geo"]])
-        df["borda_grand"] = borda(df[[f"{rk}_{var}" for var in GRAND_VARIABLES for rk in GRAND_RANKERS]])
+        df["borda_grand"] = borda(df[[c for var in GRAND_VARIABLES for rk in RANKIT_RANKERS if (c := f"{rk}_{var}") in df]])
     return df
