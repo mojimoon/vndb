@@ -9,9 +9,7 @@
     "preview": "vite preview",
     "typecheck": "wrangler types worker/worker-configuration.d.ts >/dev/null && tsc -b",
     "cf-typegen": "wrangler types worker/worker-configuration.d.ts",
-    "db:migrate:local": "wrangler d1 migrations apply vndb --local",
     "db:seed:local": "wrangler d1 execute vndb --local --file seed/sample.sql",
-    "db:migrate:remote": "wrangler d1 migrations apply vndb --remote",
     "deploy": "vite build && wrangler deploy"
   },
   "dependencies": {

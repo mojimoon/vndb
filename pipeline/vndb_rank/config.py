@@ -14,6 +14,11 @@ class Config:
     neighbors_per_category: int = 10
     # Skip the rankit-based "scientific ranking" methods (they are the slowest).
     skip_rankit: bool = False
+    # Users need this many votes on ranked VNs to get a user page and
+    # recommendations (all votes still count towards the rankings).
+    min_user_votes: int = 5
+    # Skip user pages / recommendations / similar VNs (collaborative filtering).
+    skip_users: bool = False
     # Seed for anything stochastic, so snapshots are reproducible.
     seed: int = 0
 

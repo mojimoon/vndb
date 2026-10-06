@@ -10,7 +10,9 @@ from scipy.stats import spearmanr
 
 from vndb_rank.__main__ import run
 from vndb_rank.config import Config
+from vndb_rank.cf import decode_votes
 from vndb_rank.export import insert_statements, MAX_STATEMENT_BYTES
+from vndb_rank.storage import fnv1a, lookup_pair, merge_history, rank_trend
 from vndb_rank.extract import Votes, normalize_search, to_ten_scale
 from vndb_rank.methods import po_bradley_terry, po_classical, po_elo, po_entropy, po_random_walk
 from vndb_rank.neighbors import build_neighbors
@@ -18,7 +20,6 @@ from vndb_rank.pairs import build_pairs, sample_percentile
 
 from fake_dump import make_fake_dump
 
-MIGRATION = Path(__file__).resolve().parents[2] / "web" / "migrations" / "0001_init.sql"
 
 
 def brute_force(rows, n):
@@ -39,7 +40,8 @@ def make_votes(rows):
     arr = np.array(rows)
     order = np.lexsort((arr[:, 1], arr[:, 0]))
     arr = arr[order]
-    return Votes(uid=arr[:, 0].astype(np.int32), vidx=arr[:, 1].astype(np.int32), vote=arr[:, 2].astype(np.int16))
+    return Votes(uid=arr[:, 0].astype(np.int32), vidx=arr[:, 1].astype(np.int32), vote=arr[:, 2].astype(np.int16),
+                 year=np.full(len(arr), 2020, dtype=np.int16))
 
 
 def test_pairs_match_brute_force():
@@ -114,42 +116,106 @@ def snapshot(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("e2e")
     dump = make_fake_dump(tmp / "dump", n_vns=150, n_users=1500, seed=7)
     summary = run(dump, tmp / "out", Config())
-    return tmp / "out" / "snapshot.sql", summary
+    db = sqlite3.connect(":memory:")
+    db.executescript((tmp / "out" / "snapshot.sql").read_text())
+    return tmp / "out" / "snapshot.sql", summary, db
 
 
 def test_end_to_end_loads_into_sqlite(snapshot):
-    sql, summary = snapshot
-    db = sqlite3.connect(":memory:")
-    db.executescript(MIGRATION.read_text())
-    db.executescript(sql.read_text())
+    sql, summary, db = snapshot
     n = db.execute("SELECT count(*) FROM vn").fetchone()[0]
     assert n == summary["rows"]["vn"] > 50
+    assert db.execute("SELECT count(*) FROM sqlite_master WHERE name LIKE '%__next'").fetchone()[0] == 0
     snap = json.loads(db.execute("SELECT value FROM meta WHERE key='snapshot'").fetchone()[0])
     assert snap == summary["snapshot"]
     info = json.loads(db.execute("SELECT value FROM meta WHERE key='info'").fetchone()[0])
     assert "borda_grand" in info["methods"] and info["default_method"] == "borda_grand"
+    assert sorted(r[0] for r in db.execute("SELECT idx FROM vn")) == list(range(n))
 
-    # The query the worker runs for the ranking list.
-    rows = db.execute(
-        "SELECT id, json_extract(ranks, '$.po_percent[0]') AS r FROM vn ORDER BY r"
-    ).fetchall()
+    # The query the worker runs for a method's ranks.
+    rows = db.execute("SELECT id, json_extract(ranks, '$.po_percent[0]') AS r FROM vn ORDER BY r").fetchall()
     assert [r[1] for r in rows][:3] == [1, 2, 3]
     assert all(db.execute("SELECT count(*) FROM producer WHERE id = ?", (d,)).fetchone()[0] == 1
                for (d,) in db.execute("SELECT DISTINCT dev_id FROM vn WHERE dev_id IS NOT NULL"))
 
-    # Re-importing a newer snapshot replaces everything.
-    db.executescript(sql.read_text().replace(summary["snapshot"], "next"))
-    assert db.execute("SELECT count(DISTINCT snapshot) FROM vn").fetchone()[0] == 1
+    # Re-importing over an existing database swaps the tables cleanly.
+    db.executescript(sql.read_text())
+    assert db.execute("SELECT count(*) FROM vn").fetchone()[0] == n
 
 
 def test_rankings_track_latent_quality(snapshot):
-    sql, _ = snapshot
-    db = sqlite3.connect(":memory:")
-    db.executescript(MIGRATION.read_text())
-    db.executescript(sql.read_text())
+    _, _, db = snapshot
     rows = db.execute("SELECT rating, ranks FROM vn").fetchall()
     rating = [r[0] for r in rows]
     for m in ["po_percent", "po_bt", "massey_prob", "borda_grand"]:
         rank = [json.loads(r[1])[m][0] for r in rows]
         rho = spearmanr(rating, rank)[0]
         assert rho < -0.6, (m, rho)  # better rating -> smaller rank number
+
+
+def test_pair_blocks_round_trip(snapshot):
+    _, _, db = snapshot
+    blocks: dict[int, bytes] = {}
+    for a, part, data in db.execute("SELECT a, part, data FROM pair_block ORDER BY a, part"):
+        blocks[a] = blocks.get(a, b"") + data
+    idx = dict(db.execute("SELECT id, idx FROM vn"))
+    for vid, nb in db.execute("SELECT id, neighbors FROM vn LIMIT 30"):
+        for other, wins, losses, common in json.loads(nb):
+            assert lookup_pair(blocks, idx[vid], idx[other]) == (wins, losses, common)
+
+
+def test_vn_analysis_and_history(snapshot):
+    _, _, db = snapshot
+    info = json.loads(db.execute("SELECT value FROM meta WHERE key='info'").fetchone()[0])
+    for analysis, history, ranks in db.execute("SELECT analysis, history, ranks FROM vn LIMIT 20"):
+        a = json.loads(analysis)
+        assert sum(a["hist"]) == a["n"] > 0 and 1 <= a["mean"] <= 10
+        assert sum(a["sp"]["hist"]) == a["n"] and 0 < a["sp"]["mean"] < 1
+        h = json.loads(history)
+        assert h[-1] == [info["day"], json.loads(ranks)["borda_grand"][0], json.loads(ranks)["vndb"][0]]
+
+
+def test_users_and_recommendations(snapshot):
+    _, summary, db = snapshot
+    assert summary["user_pages"] > 100
+    n_vn = db.execute("SELECT count(*) FROM vn").fetchone()[0]
+    users = {}
+    for (data,) in db.execute("SELECT data FROM user_block"):
+        users.update(json.loads(data))
+    assert len(users) == summary["user_pages"]
+    with_recs = 0
+    for uid, rec in users.items():
+        idx, vote = decode_votes(rec["votes"])
+        assert len(idx) >= 5 and (np.diff(idx) > 0).all() and ((10 <= vote) & (vote <= 100)).all() and idx.max() < n_vn
+        assert all(r[0] not in set(idx.tolist()) for r in rec["recs"])  # never recommend what they voted on
+        assert all(s[0] != int(uid) for s in rec["similar"])
+        with_recs += bool(rec["recs"])
+    assert with_recs > len(users) * 0.5
+    # name index resolves every user
+    names = {}
+    for (data,) in db.execute("SELECT data FROM user_name"):
+        names.update(json.loads(data))
+    some = next(iter(users.items()))
+    assert names[some[1]["name"].lower()] == int(some[0])
+
+
+def test_similar_items_are_valid(snapshot):
+    _, _, db = snapshot
+    ids = {r[0] for r in db.execute("SELECT id FROM vn")}
+    nonempty = 0
+    for vid, sim in db.execute("SELECT id, similar FROM vn"):
+        s = json.loads(sim)
+        nonempty += bool(s)
+        assert all(o in ids and o != vid and 0 < x <= 1 for o, x, _ in s)
+    assert nonempty > len(ids) * 0.5
+
+
+def test_storage_helpers():
+    assert fnv1a("a") == 0xE40C292C
+    today = 10_000
+    hist = [[today - d, d, d] for d in range(800, 0, -1)]
+    merged = merge_history(hist, today, [1, 2])
+    assert merged[-1] == [today, 1, 2]
+    assert len([p for p in merged if today - p[0] <= 90]) == 91
+    assert all(today - p[0] <= 730 for p in merged)
+    assert rank_trend([[today - 8, 10, 0], [today, 4, 0]], today) == 6

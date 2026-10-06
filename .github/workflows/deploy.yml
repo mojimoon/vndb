@@ -1,4 +1,4 @@
-# Deploys the Worker + static site and applies D1 migrations on pushes to main.
+# Deploys the Worker + static site on pushes to main (the daily snapshot import owns the D1 schema).
 # Needs repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
 name: Deploy
 
@@ -35,5 +35,4 @@ jobs:
             exit 1
           fi
       - run: npm ci
-      - run: npx wrangler d1 migrations apply vndb --remote
       - run: npm run deploy
