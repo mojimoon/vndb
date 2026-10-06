@@ -15,7 +15,6 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ vars.DEPLOY_ENABLED != 'false' }}
     defaults:
       run:
         working-directory: web
