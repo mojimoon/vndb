@@ -24,6 +24,8 @@ export interface CatalogueItem extends TitleFields {
   length: number | null;
   trend: number | null;
   vndb_rank: number;
+  /** Rank under the default ranking ("SciRanking"). */
+  sci_rank: number;
   search: string;
 }
 
@@ -68,7 +70,7 @@ export interface VnDetail extends TitleFields {
   history: [day: number, rank: number, vndbRank: number][];
   neighbors: { id: number; wins: number; losses: number; common: number }[];
   relations: { id: number; relation: string }[];
-  similar: { id: number; sim: number; common: number }[];
+  similar: { id: number; sim: number; common: number; wins: number; losses: number }[];
 }
 
 /** Exact head-to-head and 10x10 joint distributions of two VNs (by idx). */
@@ -89,10 +91,14 @@ export interface Note {
   date: number;
   text: string;
   hasPage: boolean;
+  labels: number; // list labels bit mask (bit k-1 = label k)
+  nvotes: number; // the author's votes on any VN
+  sp: number | null; // 0-100: where the vote sits within the author's list
 }
 
 export interface NotesPage {
   total: number;
+  matched: number;
   page: number;
   pageSize: number;
   notes: Note[];
@@ -103,6 +109,8 @@ export interface UserNote {
   vote: number;
   date: number;
   text: string;
+  labels: number;
+  sp: number | null;
 }
 
 /** [uid, name, value, ranked votes, has user page] */
@@ -112,7 +120,8 @@ export interface UserData {
   uid: number;
   name: string;
   votes: [idx: number, vote: number][];
-  similar: { uid: number; name: string; sim: number; common: number }[];
+  /** higher / equal / lower: common titles this user voted higher than, equal to, lower than the other. */
+  similar: { uid: number; name: string; sim: number; common: number; higher: number; equal: number; lower: number; votes: number }[];
   recs: { idx: number; pred: number; support: number }[];
 }
 
@@ -170,10 +179,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Bump when a response format changes: it is part of every API URL, so
+ *  browser and edge caches never hand old-format responses to new code. */
+export const API_VERSION = 4;
+
+const versioned = (path: string) => `${path}${path.includes("?") ? "&" : "?"}v=${API_VERSION}`;
+
 export function fetchJson<T>(path: string): Promise<T> {
   let p = cache.get(path) as Promise<T> | undefined;
   if (!p) {
-    p = fetch(path).then(async (r) => {
+    p = fetch(versioned(path)).then(async (r) => {
       if (!r.ok) {
         const body = (await r.json().catch(() => ({}))) as { error?: string };
         throw new ApiError(r.status, body.error ?? r.statusText);
@@ -182,6 +197,21 @@ export function fetchJson<T>(path: string): Promise<T> {
     });
     p.catch(() => cache.delete(path));
     cache.set(path, p);
+  }
+  return p;
+}
+
+/** Binary responses (no in-memory JSON parsing); cached like fetchJson. */
+const binCache = new Map<string, Promise<ArrayBuffer>>();
+export function fetchBinary(path: string): Promise<ArrayBuffer> {
+  let p = binCache.get(path);
+  if (!p) {
+    p = fetch(versioned(path)).then((r) => {
+      if (!r.ok) throw new ApiError(r.status, r.statusText);
+      return r.arrayBuffer();
+    });
+    p.catch(() => binCache.delete(path));
+    binCache.set(path, p);
   }
   return p;
 }
@@ -229,13 +259,15 @@ export interface Catalogue {
 let catalogueMemo: { src: unknown; value: Catalogue } | null = null;
 
 export function useCatalogue(): Loadable<Catalogue> {
-  const raw = useApi<{ columns: string[]; rows: unknown[][] }>("/api/catalogue");
+  const raw = useApi<{ columns?: string[]; rows?: unknown[][]; items?: CatalogueItem[] }>("/api/catalogue");
   return useMemo<Loadable<Catalogue>>(() => {
     if (raw.state !== "ok") return raw;
     // Shared across components: the catalogue is ~8k rows, build the objects once.
     if (catalogueMemo?.src === raw.data) return { state: "ok", data: catalogueMemo.value };
-    const { columns, rows } = raw.data;
-    const items = rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])) as unknown as CatalogueItem);
+    const { columns, rows, items: legacy } = raw.data;
+    if (!legacy && !(columns && rows)) return { state: "error", error: new ApiError(500, "unexpected catalogue format") };
+    // `items` is the pre-v3 format, still possible from an old cache entry.
+    const items = legacy ?? rows!.map((r) => Object.fromEntries(columns!.map((c, i) => [c, r[i]])) as unknown as CatalogueItem);
     const byIdx: CatalogueItem[] = [];
     for (const it of items) byIdx[it.idx] = it;
     const value = { items, byId: new Map(items.map((i) => [i.id, i])), byIdx };
@@ -250,7 +282,7 @@ export function useRanks(method: string | null): Loadable<RankMap> {
   const raw = useApi<RanksResponse>(method ? `/api/ranks?m=${encodeURIComponent(method)}` : null);
   return useMemo<Loadable<RankMap>>(() => {
     if (raw.state !== "ok") return raw;
-    return { state: "ok", data: new Map(raw.data.ranks.map(([id, rank, score]) => [id, { rank, score }])) };
+    return { state: "ok", data: new Map((raw.data.ranks ?? []).map(([id, rank, score]) => [id, { rank, score }])) };
   }, [raw]);
 }
 
@@ -264,7 +296,7 @@ export function useManyRanks(methods: string[]): Loadable<Record<string, RankMap
       (rs) => {
         if (!alive) return;
         const out: Record<string, RankMap> = {};
-        rs.forEach((r) => (out[r.method] = new Map(r.ranks.map(([id, rank, score]) => [id, { rank, score }]))));
+        rs.forEach((r) => (out[r.method] = new Map((r.ranks ?? []).map(([id, rank, score]) => [id, { rank, score }]))));
         setState({ key, value: { state: "ok", data: out } });
       },
       (error: Error) => alive && setState({ key, value: { state: "error", error } }),
@@ -289,22 +321,104 @@ export function useVn(id: number): Loadable<VnDetail> {
   return useMemo<Loadable<VnDetail>>(() => {
     if (raw.state !== "ok") return raw;
     const v = raw.data;
+    // Arrays from the v3 worker; objects (pre-v3) are passed through.
+    const expand = <T,>(list: unknown, f: (row: never[]) => T): T[] =>
+      Array.isArray(list) ? list.map((row) => (Array.isArray(row) ? f(row as never[]) : (row as T))) : [];
     return {
       state: "ok",
       data: {
         ...v,
-        neighbors: v.neighbors.map(([nid, wins, losses, common]) => ({ id: nid, wins, losses, common })),
-        relations: v.relations.map(([rid, relation]) => ({ id: rid, relation })),
-        similar: v.similar.map(([sid, sim, common]) => ({ id: sid, sim, common })),
+        analysis: { ...v.analysis, years: v.analysis?.years ?? [], labels: v.analysis?.labels ?? {} },
+        history: v.history ?? [],
+        neighbors: expand(v.neighbors, ([nid, wins, losses, common]) => ({ id: nid, wins, losses, common })),
+        relations: expand(v.relations, ([rid, relation]) => ({ id: rid, relation })),
+        similar: expand(v.similar, ([sid, sim, common, wins, losses]) => ({ id: sid, sim, common, wins: wins ?? 0, losses: losses ?? 0 })),
       },
     };
   }, [raw]);
 }
 export const useUser = (uid: number) => useApi<UserData>(`/api/user/${uid}`);
+
+/** One VN's voters with the attributes the ratings filters need (see /api/voters). */
+export interface Voters {
+  n: number;
+  vote: Uint8Array; // 10..100
+  sp: Uint8Array; // sample percentile x 200
+  labels: Uint8Array;
+  year: Uint16Array; // 0 = unknown
+  nvotes: Uint16Array;
+  umean: Uint8Array; // 10..100
+  cv: Float32Array; // r vs VNDB rating, NaN = n/a
+  cs: Float32Array; // r vs default ranking
+}
+
+export function useVoters(idx: number | null): Loadable<Voters> {
+  const [res, setRes] = useState<{ idx: number | null; value: Loadable<Voters> }>({ idx, value: { state: "loading" } });
+  useEffect(() => {
+    if (idx === null) return;
+    let alive = true;
+    fetchBinary(`/api/voters/${idx}`).then(
+      (buf) => alive && setRes({ idx, value: { state: "ok", data: parseVoters(buf) } }),
+      (error: Error) => alive && setRes({ idx, value: { state: "error", error } }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [idx]);
+  return res.idx === idx ? res.value : { state: "loading" };
+}
+
+const VOTER_BYTES = 9;
+function parseVoters(buf: ArrayBuffer): Voters {
+  const b = new Uint8Array(buf);
+  const dv = new DataView(buf);
+  const n = Math.floor(b.length / VOTER_BYTES);
+  const v: Voters = {
+    n,
+    vote: new Uint8Array(n),
+    sp: new Uint8Array(n),
+    labels: new Uint8Array(n),
+    year: new Uint16Array(n),
+    nvotes: new Uint16Array(n),
+    umean: new Uint8Array(n),
+    cv: new Float32Array(n),
+    cs: new Float32Array(n),
+  };
+  const r = (x: number) => (x === -128 ? NaN : x / 100);
+  for (let i = 0, o = 0; i < n; i++, o += VOTER_BYTES) {
+    v.vote[i] = b[o];
+    v.sp[i] = b[o + 1];
+    v.labels[i] = b[o + 2];
+    v.year[i] = b[o + 3] ? 1990 + b[o + 3] : 0;
+    v.nvotes[i] = dv.getUint16(o + 4, true);
+    v.umean[i] = b[o + 6];
+    v.cv[i] = r(dv.getInt8(o + 7));
+    v.cs[i] = r(dv.getInt8(o + 8));
+  }
+  return v;
+}
+
+export interface NotesQuery {
+  sort?: "date" | "vote" | "sp";
+  dir?: "desc" | "asc";
+  st?: number; // label mask: any of
+  minv?: number | null;
+  maxv?: number | null;
+}
+
+export function notesPath(idx: number, page: number, q: NotesQuery = {}): string {
+  const p = new URLSearchParams({ page: String(page) });
+  if (q.sort && q.sort !== "date") p.set("sort", q.sort);
+  if (q.dir === "asc") p.set("dir", "asc");
+  if (q.st) p.set("st", String(q.st));
+  if (q.minv) p.set("minv", String(q.minv));
+  if (q.maxv) p.set("maxv", String(q.maxv));
+  return `/api/notes/vn/${idx}?${p}`;
+}
 /** a, b are catalogue idx values (not VNDB ids). */
 export const useJoint = (a: number | null | undefined, b: number | null | undefined) =>
   useApi<Joint>(a != null && b != null && a !== b ? `/api/joint/${a}/${b}` : null);
-export const useVnNotes = (idx: number | null | undefined, page: number) => useApi<NotesPage>(idx != null ? `/api/notes/vn/${idx}?page=${page}` : null);
+export const useVnNotes = (idx: number | null | undefined, page: number, q?: NotesQuery) => useApi<NotesPage>(idx != null ? notesPath(idx, page, q) : null);
 export const useUserNotes = (uid: number) => useApi<{ uid: number; notes: UserNote[] }>(`/api/user/${uid}/notes`);
 
 /** Start the requests every page needs as soon as the app loads. */

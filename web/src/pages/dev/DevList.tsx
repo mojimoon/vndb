@@ -21,7 +21,8 @@ export default function DevList() {
     const dir = LOWER_IS_BETTER[sort] ? 1 : -1;
     return list.sort((a, b) => dir * (((a[sort] ?? Infinity) as number) - ((b[sort] ?? Infinity) as number)) || b.count - a.count);
   }, [stats, minCount, sort, q]);
-  const [visible, more] = useShowMore(rows, 50, 100);
+  // `table` is defined below the early return; the modal only calls it after this render.
+  const [visible, more] = useShowMore(rows, 50, t("dev.title"), (items) => table(items));
   if (stats.state !== "ok") return <Status value={stats} />;
 
   const Th = ({ k, children }: { k: DevKey; children: React.ReactNode }) => (
@@ -51,9 +52,16 @@ export default function DevList() {
         </label>
         <span className="tabular text-sm text-ink-3">{t("dev.count", { n: rows.length })}</span>
       </div>
+      {table(visible)}
+      {more}
+    </div>
+  );
+
+  function table(items: DevStats[]) {
+    return (
       <div className="overflow-x-auto rounded-lg border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="whitespace-nowrap border-b border-line text-left text-xs text-ink-3">
+          <thead className="whitespace-nowrap border-b border-line text-left text-xs text-ink-2">
             <tr>
               <th className="w-10 px-3 py-2 text-right font-medium">#</th>
               <th className="px-3 py-2 font-medium">{t("rank.col.dev")}</th>
@@ -65,9 +73,9 @@ export default function DevList() {
             </tr>
           </thead>
           <tbody>
-            {visible.map((d: DevStats, i) => (
+            {items.map((d: DevStats, i) => (
               <tr key={d.id} className="border-t border-line hover:bg-surface-2/60">
-                <td className="tabular px-3 py-2 text-right text-ink-3">{i + 1}</td>
+                <td className="tabular px-3 py-2 text-right text-ink-2">{i + 1}</td>
                 <td className="px-3 py-2">
                   <Link to={`/dev/${d.id}`} className="font-medium hover:text-accent-ink">
                     {(lang === "zh" ? d.name ?? d.latin : d.latin ?? d.name) ?? `p${d.id}`}
@@ -84,7 +92,6 @@ export default function DevList() {
           </tbody>
         </table>
       </div>
-      {more}
-    </div>
-  );
+    );
+  }
 }

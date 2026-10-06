@@ -29,20 +29,23 @@ export default function Movers() {
 }
 
 function MoverList({ title, rows }: { title: string; rows: Row[] }) {
-  const [visible, more] = useShowMore(rows, 20, 30);
-  return (
-    <section className="rounded-lg border border-line bg-surface">
-      <h2 className="border-b border-line px-4 py-2.5 text-sm font-semibold">{title}</h2>
+  const list = (items: Row[]) => (
       <ul>
-        {visible.map((r) => (
+        {items.map((r) => (
           <li key={r.id} className="flex items-baseline gap-3 border-t border-line px-3 py-1.5 text-sm first:border-0">
             <span className="w-14 shrink-0 text-right text-xs">
               <Delta d={r.trend!} />
             </span>
-            <VnLink vn={r} released={r.released} className="truncate" />
+            <VnLink vn={r} released={r.released} truncate />
           </li>
         ))}
       </ul>
+  );
+  const [visible, more] = useShowMore(rows, 20, title, list);
+  return (
+    <section className="rounded-lg border border-line bg-surface">
+      <h2 className="border-b border-line px-4 py-2.5 text-sm font-semibold">{title}</h2>
+      {list(visible)}
       <div className="pb-2">{more}</div>
     </section>
   );

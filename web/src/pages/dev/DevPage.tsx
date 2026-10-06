@@ -166,10 +166,7 @@ function DevPicker({ devs, exclude, onPick, name }: { devs: DevStats[]; exclude:
 
 function VnTable({ d }: { d: DevStats }) {
   const { t, lang } = useI18n();
-  const [visible, more] = useShowMore(d.vns, 25, 50);
-  return (
-    <section>
-      <h2 className="mb-2 text-lg font-semibold">{t("dev.titles", { n: d.count })}</h2>
+  const table = (items: DevStats["vns"]) => (
       <div className="overflow-x-auto rounded-lg border border-line bg-surface">
         <table className="w-full text-sm">
           <thead className="whitespace-nowrap border-b border-line text-left text-xs text-ink-3">
@@ -182,11 +179,11 @@ function VnTable({ d }: { d: DevStats }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((v) => (
+            {items.map((v) => (
               <tr key={v.id} className="border-t border-line">
                 <td className="tabular px-3 py-2 text-right font-semibold">{v.rank}</td>
-                <td className="px-3 py-2">
-                  <VnLink vn={v} released={v.released} />
+                <td className="max-w-0 px-3 py-2">
+                  <VnLink vn={v} released={v.released} truncate />
                 </td>
                 <td className="hidden px-3 py-2 text-ink-2 sm:table-cell">{v.olang ? langName(v.olang, lang) : "—"}</td>
                 <td className="tabular px-3 py-2 text-right text-ink-2">{formatInt(v.votes)}</td>
@@ -196,6 +193,12 @@ function VnTable({ d }: { d: DevStats }) {
           </tbody>
         </table>
       </div>
+  );
+  const [visible, more] = useShowMore(d.vns, 25, t("dev.titles", { n: d.count }), table);
+  return (
+    <section>
+      <h2 className="mb-2 text-lg font-semibold">{t("dev.titles", { n: d.count })}</h2>
+      {table(visible)}
       {more}
     </section>
   );

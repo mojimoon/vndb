@@ -33,6 +33,48 @@ def sp_decile(sp: np.ndarray) -> np.ndarray:
     return np.minimum((np.asarray(sp) * 10).astype(np.int64), 9)
 
 
+def pearson_by_user(uinv: np.ndarray, x: np.ndarray, y: np.ndarray, min_n: int = 3) -> np.ndarray:
+    """Pearson r of x and y within each user (uinv = user index per vote);
+    NaN in y is skipped, and users with fewer than min_n pairs or no variance get NaN."""
+    m = ~np.isnan(y)
+    u, x, y = uinv[m], x[m], y[m]
+    k = int(uinv.max()) + 1 if len(uinv) else 0
+    n = np.bincount(u, minlength=k).astype(np.float64)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mx = np.bincount(u, weights=x, minlength=k) / n
+        my = np.bincount(u, weights=y, minlength=k) / n
+        cov = np.bincount(u, weights=x * y, minlength=k) / n - mx * my
+        vx = np.bincount(u, weights=x * x, minlength=k) / n - mx * mx
+        vy = np.bincount(u, weights=y * y, minlength=k) / n - my * my
+        r = cov / np.sqrt(vx * vy)
+    r[(n < min_n) | (vx <= 1e-9) | (vy <= 1e-12)] = np.nan
+    return np.clip(r, -1, 1)
+
+
+def user_attributes(votes: Votes, user_total: pd.Series, targets: list[np.ndarray]) -> dict[str, np.ndarray]:
+    """User-level attributes copied onto each of their votes (for filtering voters):
+
+    * ``nvotes`` the user's votes on any VN (uint16, saturating)
+    * ``umean``  the user's mean ranked vote on the 10-100 scale (uint8)
+    * ``corr``   one int8 per target: Pearson r x 100 between the user's votes and
+                 a per-VN value (NaN = skip), -128 when undefined
+    """
+    users, uinv = np.unique(votes.uid, return_inverse=True)
+    x = votes.vote.astype(np.float64)
+    mean = np.bincount(uinv, weights=x) / np.bincount(uinv)
+    total = user_total.reindex(users).fillna(0).to_numpy()
+    out = {
+        "nvotes": np.minimum(total, 65535).astype(np.uint16)[uinv],
+        "umean": np.rint(mean).astype(np.uint8)[uinv],
+        "corr": [],
+    }
+    for t in targets:
+        r = pearson_by_user(uinv, x, np.asarray(t, dtype=np.float64)[votes.vidx])
+        enc = np.where(np.isnan(r), -128, np.rint(np.nan_to_num(r) * 100)).astype(np.int8)
+        out["corr"].append(enc[uinv])
+    return out
+
+
 def per_user_means(votes: Votes) -> np.ndarray:
     """Each vote's user mean (10-100 scale), aligned with votes."""
     return pd.Series(votes.vote, dtype=np.float64).groupby(votes.uid).transform("mean").to_numpy()

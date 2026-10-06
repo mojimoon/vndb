@@ -108,14 +108,11 @@ function Leaderboards({ lb, year }: { lb: NonNullable<Meta["leaderboards"]>; yea
 
 function Board({ title, rows, fmt }: { title: string; rows: LeaderEntry[]; fmt: (v: number) => string }) {
   const { t } = useI18n();
-  const [visible, more] = useShowMore(rows, 10, 20);
-  return (
-    <div className="rounded-lg border border-line bg-surface p-3">
-      <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+  const list = (items: LeaderEntry[]) => (
       <ol className="text-sm">
-        {visible.map(([uid, name, value, n, page], i) => (
+        {items.map(([uid, name, value, n, page], i) => (
           <li key={uid} className="grid grid-cols-[1.5rem_1fr_auto] items-baseline gap-2 border-t border-line py-1 first:border-0">
-            <span className="tabular text-xs text-ink-3">{i + 1}</span>
+            <span className="tabular text-xs text-ink-2">{i + 1}</span>
             {page ? (
               <Link to={`/user/${uid}`} className="truncate hover:text-accent-ink">
                 {name || `u${uid}`}
@@ -131,6 +128,12 @@ function Board({ title, rows, fmt }: { title: string; rows: LeaderEntry[]; fmt: 
           </li>
         ))}
       </ol>
+  );
+  const [visible, more] = useShowMore(rows, 10, title, list);
+  return (
+    <div className="rounded-lg border border-line bg-surface p-3">
+      <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+      {list(visible)}
       {more}
     </div>
   );

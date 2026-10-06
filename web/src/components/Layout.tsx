@@ -46,9 +46,9 @@ export default function Layout() {
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-3">
-          <NavLink to="/" className="mr-1 flex shrink-0 items-center gap-2 font-semibold tracking-tight sm:mr-2" aria-label="VNDB Ranking+">
+          <NavLink to="/" className="mr-1 flex shrink-0 items-center gap-2 font-semibold tracking-tight sm:mr-2" aria-label={t("site.name")}>
             <img src="/favicon.svg" alt="" className="h-6 w-6" />
-            <span className="hidden sm:inline">VNDB Ranking+</span>
+            <span className="hidden sm:inline">{t("site.name")}</span>
           </NavLink>
           <nav className="-my-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1 sm:gap-1">
             <NavLink to="/" className={({ isActive }) => link({ isActive: isActive && !/^\/(vn|user|dev|compare|methods|stats)/.test(location.pathname) })}>
@@ -63,14 +63,17 @@ export default function Layout() {
             <NavLink to="/compare" className={link}>
               {t("nav.compare")}
             </NavLink>
-            <NavLink to="/methods" className={link}>
-              {t("nav.methods")}
-            </NavLink>
             <NavLink to="/stats" className={link}>
               {t("nav.stats")}
             </NavLink>
+            <NavLink to="/methods" className={link}>
+              {t("nav.methods")}
+            </NavLink>
           </nav>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            <a href="https://github.com/mojimoon/vndb" target="_blank" rel="noopener noreferrer" className="mr-1 hidden shrink-0 sm:block">
+              <img src="https://img.shields.io/github/stars/mojimoon/vndb?style=social" alt="GitHub stars" height="20" className="h-5" />
+            </a>
             <button
               type="button"
               onClick={() => setLang(lang === "zh" ? "en" : "zh")}

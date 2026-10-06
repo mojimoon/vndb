@@ -115,8 +115,8 @@ export default function RankTable() {
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-xs text-ink-3">{t("rank.compareWith")}:</span>
         {extras.map((m) => (
-          <span key={m} className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-0.5 text-xs">
-            {methodName(m, lang)}
+          <span key={m} className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-0.5 text-xs" title={methodName(m, lang)}>
+            {methodShort(m, lang)}
             <button type="button" aria-label="remove" onClick={() => setExtras(extras.filter((x) => x !== m))} className="text-ink-3 hover:text-ink">
               ×
             </button>
@@ -172,8 +172,8 @@ export default function RankTable() {
                 {t("rank.col.rank")}
               </Th>
               {extras.map((m) => (
-                <Th key={m} k={`x:${m}`} className="w-16 text-right" title={methodName(m, lang)}>
-                  <span className="max-w-24 truncate">{methodShort(m, lang)}</span>
+                <Th key={m} k={`x:${m}`} className="text-right" title={methodName(m, lang)}>
+                  <span className="whitespace-nowrap">{methodShort(m, lang)}</span>
                 </Th>
               ))}
               {has("delta") && (

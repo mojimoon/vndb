@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import "./index.css";
 import { I18nProvider } from "./lib/i18n";
 import { prefetchCore } from "./lib/api";
+import AppError from "./components/AppError";
 import Layout from "./components/Layout";
 import RankingLayout from "./pages/ranking/RankingLayout";
 import RankTable from "./pages/ranking/RankTable";
@@ -39,6 +40,7 @@ function NotFound() {
 const router = createBrowserRouter([
   {
     element: <Layout />,
+    errorElement: <AppError />,
     children: [
       {
         element: <RankingLayout />,

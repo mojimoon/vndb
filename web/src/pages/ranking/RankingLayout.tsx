@@ -79,9 +79,10 @@ export default function RankingLayout() {
       </section>
 
       <section className="space-y-2">
-        <div className="grid gap-2 sm:grid-cols-[2fr_1.4fr_auto]">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[2fr_1.4fr_1.3fr_auto]">
           <input type="search" value={filters.q} onChange={(e) => update({ q: e.target.value })} placeholder={t("rank.search")} aria-label={t("rank.search")} className={input} />
-          {rows.state === "ok" && <DevFilter rows={rows.data} value={filters.dev} onChange={(d) => update({ dev: d ? String(d) : null })} />}
+          {rows.state === "ok" ? <DevFilter rows={rows.data} value={filters.dev} onChange={(d) => update({ dev: d ? String(d) : null })} /> : <div />}
+          <YearRange from={filters.from} to={filters.to} update={update} input={input} />
           <button
             type="button"
             onClick={() => setAdvanced(!advanced)}
@@ -114,7 +115,6 @@ export default function RankingLayout() {
                 ))}
               </select>
             </Field>
-            <Range label={t("rank.col.year")} lo={["from", filters.from]} hi={["to", filters.to]} update={update} input={input} step={1} />
             <Range label={t("rank.col.votes")} lo={["minv", filters.minVotes || null]} hi={["maxv", filters.maxVotes]} update={update} input={input} step={10} />
             <Range label={t("rank.col.rating")} lo={["rmin", filters.minRating]} hi={["rmax", filters.maxRating]} update={update} input={input} step={0.1} />
           </div>
@@ -145,6 +145,18 @@ export default function RankingLayout() {
       ) : (
         <Status value={rows} />
       )}
+    </div>
+  );
+}
+
+/** Release-year range without a field label (it sits in the basic filter row). */
+function YearRange({ from, to, update, input }: { from: number | null; to: number | null; update: (patch: Record<string, string | null>) => void; input: string }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label={t("rank.col.year")}>
+      <input type="number" inputMode="numeric" step={1} value={from ?? ""} onChange={(e) => update({ from: e.target.value })} placeholder={t("rank.yearFrom")} aria-label={t("rank.yearFrom")} className={input} />
+      <span className="text-ink-3">–</span>
+      <input type="number" inputMode="numeric" step={1} value={to ?? ""} onChange={(e) => update({ to: e.target.value })} placeholder={t("rank.yearTo")} aria-label={t("rank.yearTo")} className={input} />
     </div>
   );
 }

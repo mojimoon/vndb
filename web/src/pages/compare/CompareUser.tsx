@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router";
-import { all, useCatalogue, useUser, type Catalogue, type CatalogueItem, type UserData } from "../../lib/api";
+import { all, useCatalogue, useUser, useUserNotes, type Catalogue, type CatalogueItem, type UserData, type UserNote } from "../../lib/api";
 import { pct, pearson, samplePercentiles, scoreLabels, decileLabels, titles } from "../../lib/format";
 import { useI18n, type StringKey } from "../../lib/i18n";
 import { PairedBars, Scatter } from "../../components/Charts";
+import { Modal } from "../../components/Modal";
+import { NoteCard } from "../../components/NoteCard";
 import { useShowMore } from "../../components/ShowMore";
 import { Status } from "../../components/Status";
 import { Card, Stat, VnLink } from "../../components/VnLink";
@@ -40,7 +42,7 @@ function scored(u: UserData, cat: Catalogue): Scored[] {
 }
 
 function View({ x, y, cat }: { x: UserData; y: UserData; cat: Catalogue }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [mode, setMode] = useState<Mode>("raw");
   const nx = x.name || `u${x.uid}`;
   const ny = y.name || `u${y.uid}`;
@@ -93,6 +95,14 @@ function View({ x, y, cat }: { x: UserData; y: UserData; cat: Catalogue }) {
   }, [d, mode]);
   const sumX = summarize(joinVotes(x, cat));
   const sumY = summarize(joinVotes(y, cat));
+  // Reviews of both users (one request each), for the 💬 marks and the review modal.
+  const notesX = useUserNotes(x.uid);
+  const notesY = useUserNotes(y.uid);
+  const reviews = useMemo(() => {
+    const m = (r: typeof notesX) => new Map<number, UserNote>(r.state === "ok" ? r.data.notes.map((n) => [n.idx, n]) : []);
+    return [m(notesX), m(notesY)] as const;
+  }, [notesX, notesY]);
+  const [open, setOpen] = useState<CatalogueItem | null>(null);
 
   return (
     <article className="space-y-5">
@@ -133,6 +143,7 @@ function View({ x, y, cat }: { x: UserData; y: UserData; cat: Catalogue }) {
                 [t("user.mean"), sumX.mean.toFixed(2), sumY.mean.toFixed(2), 0],
                 [t("vn.ratings.std"), sumX.std.toFixed(2), sumY.std.toFixed(2), 0],
                 [t("user.corr"), sumX.corr?.toFixed(2) ?? "—", sumY.corr?.toFixed(2) ?? "—", 0],
+                [t("user.corrSci"), sumX.corrSci?.toFixed(2) ?? "—", sumY.corrSci?.toFixed(2) ?? "—", 0],
               ]}
             />
           </Card>
@@ -142,46 +153,120 @@ function View({ x, y, cat }: { x: UserData; y: UserData; cat: Catalogue }) {
         </div>
       </div>
 
+      <p className="text-sm text-ink-2">{t("compare.clickHint")}</p>
       <div className="grid gap-4 lg:grid-cols-2">
         {v.lists.map(([title, rows]) => {
           const label = Array.isArray(title) ? t(title[0], { a: title[1], b: title[2] }) : t(title);
-          return <VoteList key={label + mode} title={label} rows={rows} heads={[nx, ny]} fmt={fmt} />;
+          return <VoteList key={label + mode} title={label} rows={rows} heads={[nx, ny]} fmt={fmt} reviewed={(id) => reviews[0].has(id) || reviews[1].has(id)} onOpen={setOpen} />;
         })}
       </div>
+      {open && (
+        <Modal title={titles(open, lang).main} onClose={() => setOpen(null)}>
+          <ReviewPair
+            vn={open}
+            users={[
+              { name: nx, s: d.mx.get(open.id), note: reviews[0].get(open.idx) },
+              { name: ny, s: d.my.get(open.id), note: reviews[1].get(open.idx) },
+            ]}
+          />
+        </Modal>
+      )}
     </article>
   );
 }
 
-function VoteList({ title, rows, heads, fmt }: { title: string; rows: Row[]; heads: [string, string]; fmt: (v: number | null) => string }) {
+function VoteList({
+  title,
+  rows,
+  heads,
+  fmt,
+  reviewed,
+  onOpen,
+}: {
+  title: string;
+  rows: Row[];
+  heads: [string, string];
+  fmt: (v: number | null) => string;
+  reviewed: (vnId: number) => boolean;
+  onOpen: (vn: CatalogueItem) => void;
+}) {
   const { lang } = useI18n();
-  const [visible, more] = useShowMore(rows, 10, 20);
+  const table = (list: Row[]) => (
+    <table className="w-full table-fixed text-sm">
+      <thead className="text-xs text-ink-2">
+        <tr>
+          <th />
+          {heads.map((h, i) => (
+            <th key={i} className="w-20 truncate py-1 text-right font-medium" title={h}>
+              {h}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {list.map((r) => (
+          <tr key={r.vn.id} onClick={() => onOpen(r.vn)} className="cursor-pointer border-t border-line hover:bg-surface-2/60">
+            <td className="py-1.5 pr-2">
+              <span className="flex min-w-0 items-baseline gap-1.5" title={titles(r.vn, lang).main}>
+                <span className="min-w-0 truncate font-medium">{titles(r.vn, lang).main}</span>
+                {r.vn.released ? <span className="shrink-0 text-xs text-ink-2">{Math.floor(r.vn.released / 10000)}</span> : null}
+                {reviewed(r.vn.id) && <span className="shrink-0 text-xs" aria-hidden>💬</span>}
+              </span>
+            </td>
+            <td className="tabular py-1.5 text-right">{fmt(r.a)}</td>
+            <td className="tabular py-1.5 text-right">{fmt(r.b)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+  const [visible, more] = useShowMore(rows, 10, title, table);
   if (!rows.length) return null;
   return (
     <Card title={title}>
-      <table className="w-full table-fixed text-sm">
-        <thead className="text-xs text-ink-3">
-          <tr>
-            <th />
-            {heads.map((h) => (
-              <th key={h} className="w-20 truncate py-1 text-right font-medium" title={h}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((r) => (
-            <tr key={r.vn.id} className="border-t border-line">
-              <td className="truncate py-1.5 pr-2" title={titles(r.vn, lang).main}>
-                <VnLink vn={r.vn} released={r.vn.released} />
-              </td>
-              <td className="tabular py-1.5 text-right">{fmt(r.a)}</td>
-              <td className="tabular py-1.5 text-right">{fmt(r.b)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {table(visible)}
       {more}
     </Card>
+  );
+}
+
+/** Both users' votes and reviews of one title. */
+function ReviewPair({ vn, users }: { vn: CatalogueItem; users: { name: string; s: Scored | undefined; note: UserNote | undefined }[] }) {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-3">
+      <p className="text-sm">
+        <VnLink vn={vn} released={vn.released} />
+      </p>
+      <ul className="space-y-2">
+        {users.map((u, i) =>
+          u.note ? (
+            <NoteCard
+              key={i}
+              head={u.name}
+              vote={u.note.vote}
+              date={u.note.date}
+              text={u.note.text}
+              labels={u.note.labels}
+              extra={u.s ? <span>{t("notes.top", { p: Math.max(1, Math.round(100 - u.s.sp * 100)) })}</span> : null}
+            />
+          ) : (
+            <li key={i} className="flex items-baseline justify-between rounded-lg border border-dashed border-line px-4 py-3 text-sm">
+              <span className="font-medium">{u.name}</span>
+              <span className="text-xs text-ink-2">
+                {u.s ? (
+                  <>
+                    <span className="mr-2 rounded bg-accent-soft px-1.5 py-0.5 font-semibold text-ink tabular">{u.s.raw}</span>
+                    {t("compare.noReview")}
+                  </>
+                ) : (
+                  t("compare.notVoted")
+                )}
+              </span>
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
   );
 }

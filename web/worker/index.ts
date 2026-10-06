@@ -7,6 +7,9 @@ const VOTER_SHARDS = 1024;
 const VN_NOTE_SHARDS = 512;
 const USER_NOTE_SHARDS = 1024;
 const NOTES_PAGE = 30;
+// Part of every edge-cache key: bump together with API_VERSION in src/lib/api.ts
+// whenever a response format changes, so cached old-format responses are never reused.
+const API_VERSION = 4;
 
 interface Info {
   methods: string[];
@@ -53,10 +56,11 @@ async function currentMeta(db: D1Database): Promise<Meta | null> {
 // Edge cache: responses are immutable per snapshot, so the snapshot id is part
 // of the cache key and a refresh simply starts using new keys. `build` returns
 // a JSON string (passed through as is), an object, or null for 404.
-async function cached(c: AppContext, build: () => Promise<string | object | null>) {
+async function cached(c: AppContext, build: () => Promise<string | Uint8Array | object | null>) {
   const snapshot = c.get("meta").snapshot;
   const url = new URL(c.req.url);
   url.searchParams.set("__snapshot", snapshot);
+  url.searchParams.set("__api", String(API_VERSION));
   const key = new Request(url.toString(), { method: "GET" });
   const cache = caches.default;
   const hit = await cache.match(key);
@@ -64,9 +68,10 @@ async function cached(c: AppContext, build: () => Promise<string | object | null
 
   const body = await build();
   if (body === null) return c.json({ error: "not found" }, 404);
-  const res = new Response(typeof body === "string" ? body : JSON.stringify(body), {
+  const binary = body instanceof Uint8Array;
+  const res = new Response(typeof body === "string" || binary ? body : JSON.stringify(body), {
     headers: {
-      "content-type": "application/json; charset=utf-8",
+      "content-type": binary ? "application/octet-stream" : "application/json; charset=utf-8",
       // Browsers revalidate after 5 minutes; the edge keeps it for a week.
       "cache-control": "public, max-age=300, s-maxage=604800",
       "x-snapshot": snapshot,
@@ -108,17 +113,22 @@ const doc = async (db: D1Database, key: string) => {
   return p.length ? p.join("") : null;
 };
 
-interface Voter {
+// storage.VOTER_DTYPE: uid u32, then 9 bytes (vote, sp x200, labels, year-1990,
+// user votes u16, user mean, r vs VNDB x100, r vs default ranking x100).
+const VOTER_BYTES = 13;
+const VOTER_TAIL = VOTER_BYTES - 4;
+
+interface Voters {
   uid: Uint32Array;
   vote: Uint8Array;
-  spd: Uint8Array;
+  spd: Uint8Array; // sample-percentile decile 0..9
+  tail: Uint8Array; // the 9 bytes after uid of every record, back to back
 }
 
 /** Voters of one VN from its shard (format: storage.voter_shards). */
-function readVoters(blobs: unknown[], idx: number): Voter {
-  const uid: number[] = [];
-  const vote: number[] = [];
-  const spd: number[] = [];
+function readVoters(blobs: unknown[], idx: number): Voters {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
   for (const blob of blobs) {
     const b = toBytes(blob);
     const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
@@ -128,18 +138,30 @@ function readVoters(blobs: unknown[], idx: number): Voter {
       const n = view.getUint32(pos + 2, true);
       pos += 6;
       if (i === idx) {
-        for (let k = 0; k < n; k++) {
-          const o = pos + k * 6;
-          uid.push(view.getUint32(o, true));
-          vote.push(b[o + 4]);
-          spd.push(b[o + 5]);
-        }
+        chunks.push(b.subarray(pos, pos + n * VOTER_BYTES));
+        total += n;
       }
-      pos += n * 6;
+      pos += n * VOTER_BYTES;
     }
   }
-  return { uid: Uint32Array.from(uid), vote: Uint8Array.from(vote), spd: Uint8Array.from(spd) };
+  const uid = new Uint32Array(total);
+  const vote = new Uint8Array(total);
+  const spd = new Uint8Array(total);
+  const tail = new Uint8Array(total * VOTER_TAIL);
+  let k = 0;
+  for (const ch of chunks) {
+    const view = new DataView(ch.buffer, ch.byteOffset, ch.byteLength);
+    for (let o = 0; o < ch.byteLength; o += VOTER_BYTES, k++) {
+      uid[k] = view.getUint32(o, true);
+      vote[k] = ch[o + 4];
+      spd[k] = Math.min(9, Math.floor(ch[o + 5] / 20));
+      tail.set(ch.subarray(o + 4, o + VOTER_BYTES), k * VOTER_TAIL);
+    }
+  }
+  return { uid, vote, spd, tail };
 }
+
+const voterBlobs = (db: D1Database, idx: number) => parts<unknown>(db, "vn_voters", "shard", idx % VOTER_SHARDS);
 
 const isMethod = (m: string, info: Info) => info.methods.includes(m);
 
@@ -202,8 +224,8 @@ app.get("/api/joint/:a{[0-9]+}/:b{[0-9]+}", (c) =>
     if (a === b) return null;
     const sa = a % VOTER_SHARDS;
     const sb = b % VOTER_SHARDS;
-    const blobsA = await parts<unknown>(c.env.DB, "vn_voters", "shard", sa);
-    const blobsB = sa === sb ? blobsA : await parts<unknown>(c.env.DB, "vn_voters", "shard", sb);
+    const blobsA = await voterBlobs(c.env.DB, a);
+    const blobsB = sa === sb ? blobsA : await voterBlobs(c.env.DB, b);
     const va = readVoters(blobsA, a);
     const vb = readVoters(blobsB, b);
     if (!va.uid.length || !vb.uid.length) return null;
@@ -232,21 +254,60 @@ app.get("/api/joint/:a{[0-9]+}/:b{[0-9]+}", (c) =>
   }),
 );
 
-// GET /api/notes/vn/:idx?page=N -> notes on one VN, newest first, NOTES_PAGE per page.
+// GET /api/voters/:idx (VN idx) -> binary, 9 bytes per voter in uid order:
+// vote, sp x200, labels, year-1990, user votes (u16 LE), user mean, r vs VNDB x100 (i8), r vs default ranking x100 (i8).
+// Lets the ratings page filter a VN's voters; 1 shard read.
+app.get("/api/voters/:idx{[0-9]+}", (c) =>
+  cached(c, async () => {
+    const idx = Number(c.req.param("idx"));
+    const v = readVoters(await voterBlobs(c.env.DB, idx), idx);
+    return v.uid.length ? v.tail : null;
+  }),
+);
+
+type NoteRow = [idx: number, uid: number, name: string, vote: number, date: number, text: string, hasPage: boolean, labels: number, nvotes: number, sp: number | null];
+const NOTE_SORTS: Record<string, (r: NoteRow) => number | null> = {
+  date: (r) => r[4],
+  vote: (r) => (r[3] > 0 ? r[3] : null),
+  sp: (r) => r[9],
+};
+
+// GET /api/notes/vn/:idx?page=N&sort=date|vote|sp&dir=desc|asc&st=<label mask>&minv=&maxv=
+// -> notes on one VN, NOTES_PAGE per page. Sorting and filtering happen here so a
+// page never needs more than the VN's note shard (1+ rows read, cached per query).
 app.get("/api/notes/vn/:idx{[0-9]+}", (c) =>
   cached(c, async () => {
     const idx = Number(c.req.param("idx"));
-    const page = Math.max(0, Number(c.req.query("page") ?? 0) || 0);
-    const rows: unknown[][] = [];
+    const q = (k: string) => c.req.query(k);
+    const page = Math.max(0, Number(q("page") ?? 0) || 0);
+    const sort = NOTE_SORTS[q("sort") ?? "date"] ? (q("sort") ?? "date") : "date";
+    const asc = q("dir") === "asc";
+    const st = Number(q("st") ?? 0) || 0;
+    const minv = Number(q("minv") ?? 0) || 0;
+    const maxv = Number(q("maxv") ?? 0) || Infinity;
+    const rows: NoteRow[] = [];
     for (const p of await parts(c.env.DB, "vn_notes", "shard", idx % VN_NOTE_SHARDS)) {
-      for (const r of JSON.parse(p) as unknown[][]) if (r[0] === idx) rows.push(r);
+      for (const r of JSON.parse(p) as NoteRow[]) if (r[0] === idx) rows.push(r);
     }
-    const slice = rows.slice(page * NOTES_PAGE, (page + 1) * NOTES_PAGE);
+    const total = rows.length;
+    const hit = rows.filter((r) => (!st || (r[7] & st) !== 0) && r[8] >= minv && r[8] <= maxv);
+    if (sort !== "date" || asc) {
+      const key = NOTE_SORTS[sort];
+      // Stable sort; notes without a value (no vote) always go last, ties stay newest first.
+      hit.sort((x, y) => {
+        const a = key(x);
+        const b = key(y);
+        if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
+        return asc ? a - b : b - a;
+      });
+    }
+    const slice = hit.slice(page * NOTES_PAGE, (page + 1) * NOTES_PAGE);
     return {
-      total: rows.length,
+      total,
+      matched: hit.length,
       page,
       pageSize: NOTES_PAGE,
-      notes: slice.map(([, uid, name, vote, date, text, hasPage]) => ({ uid, name, vote, date, text, hasPage })),
+      notes: slice.map(([, uid, name, vote, date, text, hasPage, labels, nvotes, sp]) => ({ uid, name, vote, date, text, hasPage, labels, nvotes, sp })),
     };
   }),
 );
@@ -262,7 +323,7 @@ app.get("/api/user/:uid{[0-9]+}", (c) =>
           uid,
           name: u.name,
           votes: decodeVotes(u.votes),
-          similar: (u.similar as [number, string, number, number][]).map(([id, name, sim, common]) => ({ uid: id, name, sim, common })),
+          similar: (u.similar as unknown[][]).map(([id, name, sim, common, higher, equal, lower, votes]) => ({ uid: id, name, sim, common, higher, equal, lower, votes })),
           recs: (u.recs as [number, number, number][]).map(([idx, pred, support]) => ({ idx, pred, support })),
         };
       }
@@ -275,9 +336,9 @@ app.get("/api/user/:uid{[0-9]+}", (c) =>
 app.get("/api/user/:uid{[0-9]+}/notes", (c) =>
   cached(c, async () => {
     const uid = Number(c.req.param("uid"));
-    const notes: { idx: unknown; vote: unknown; date: unknown; text: unknown }[] = [];
+    const notes: Record<string, unknown>[] = [];
     for (const p of await parts(c.env.DB, "user_notes", "shard", uid % USER_NOTE_SHARDS)) {
-      for (const [u, idx, vote, date, text] of JSON.parse(p) as unknown[][]) if (u === uid) notes.push({ idx, vote, date, text });
+      for (const [u, idx, vote, date, text, labels, sp] of JSON.parse(p) as unknown[][]) if (u === uid) notes.push({ idx, vote, date, text, labels, sp });
     }
     return { uid, notes };
   }),
