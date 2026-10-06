@@ -1,0 +1,56 @@
+# Downloads the latest VNDB dump and prints its schema (all .header files) plus
+# a few aggregate statistics, so pipeline assumptions can be checked against
+# the real data. Runs on pushes that touch this file, or manually.
+name: Dump schema probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [beta]
+    paths: [.github/workflows/dump-probe.yml]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and extract dump
+        run: |
+          sudo apt-get install -y zstd >/dev/null
+          curl -fsSL -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
+          ls -la db.tar.zst
+          mkdir dump && tar -I zstd -xf db.tar.zst -C dump && rm db.tar.zst
+          find dump -maxdepth 1 -print
+          for f in dump/TIMESTAMP dump/LICENSE*; do [ -f "$f" ] && { echo "== $f"; head -c 600 "$f"; echo; }; done
+          du -sh dump/db; ls -la dump/db | head -150
+
+      - name: Headers
+        run: for h in dump/db/*.header; do printf '%s\t' "$(basename "$h" .header)"; cat "$h"; echo; done
+
+      - name: Sample rows (public catalogue tables only)
+        run: |
+          for t in vn vn_titles releases releases_vn releases_producers producers vn_relations images; do
+            echo "== $t ($(wc -l < dump/db/$t) rows)"
+            head -n 3 dump/db/$t | cut -c1-400
+          done
+
+      - name: Aggregates used by the pipeline
+        run: |
+          cd dump/db
+          col() { awk -v n="$2" -F'\t' 'NR==1{for(i=1;i<=NF;i++) if($i==n) print i}' "$1.header"; }
+          echo "vn.c_votecount >= 30:"; awk -F'\t' -v c=$(col vn c_votecount) '$c!="\\N" && $c>=30' vn | wc -l
+          for c in c_rating c_average c_votecount; do
+            i=$(col vn $c); [ -n "$i" ] && awk -F'\t' -v i=$i '$i!="\\N"{if(min==""||$i<min)min=$i; if($i>max)max=$i; n++} END{print "vn." "'$c'", "min", min, "max", max, "n", n}' vn
+          done
+          i=$(col images c_sexual_avg); [ -n "$i" ] && awk -F'\t' -v i=$i '$i!="\\N"{if(min==""||$i<min)min=$i; if($i>max)max=$i} END{print "images.c_sexual_avg min", min, "max", max}' images
+          i=$(col releases released); awk -F'\t' -v i=$i '{print substr($i,1,2)}' releases | sort | uniq -c | sort -rn | head -5
+          awk -F'\t' -v i=$(col releases released) '$i>=99990000' releases | wc -l
+          echo "rtype values:"; awk -F'\t' -v i=$(col releases_vn rtype) '{print $i}' releases_vn | sort | uniq -c
+          echo "relation values:"; awk -F'\t' -v i=$(col vn_relations relation) '{print $i}' vn_relations | sort | uniq -c
+          echo "ulist_vns rows: $(wc -l < ulist_vns)"
+          v=$(col ulist_vns vote); l=$(col ulist_vns labels); d=$(col ulist_vns vote_date)
+          awk -F'\t' -v v=$v '$v!="\\N"{n++; if(min==""||$v<min)min=$v; if($v>max)max=$v; if($v%10)frac++} END{print "votes", n, "min", min, "max", max, "non-multiple-of-10", frac}' ulist_vns
+          echo "label samples:"; awk -F'\t' -v l=$l '{print $l}' ulist_vns | head -200000 | sort | uniq -c | sort -rn | head -8
+          echo "vote_date samples:"; awk -F'\t' -v d=$d '{print $d}' ulist_vns | head -3
+          echo "users with >=2 votes on any VN:"; awk -F'\t' -v v=$v '$v!="\\N"{print $1}' ulist_vns | uniq -c | awk '$1>=2' | wc -l
+          echo "max votes by one user:"; awk -F'\t' -v v=$v '$v!="\\N"{print $1}' ulist_vns | uniq -c | sort -rn | head -3
+          echo "is ulist_vns sorted by uid?"; cut -f1 ulist_vns | sed 's/^u//' | awk 'NR>1 && $1<p{bad++} {p=$1} END{print bad+0, "out-of-order rows"}'
