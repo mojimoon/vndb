@@ -170,10 +170,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Bump when a response format changes: it is part of every API URL, so
+ *  browser and edge caches never hand old-format responses to new code. */
+export const API_VERSION = 3;
+
+const versioned = (path: string) => `${path}${path.includes("?") ? "&" : "?"}v=${API_VERSION}`;
+
 export function fetchJson<T>(path: string): Promise<T> {
   let p = cache.get(path) as Promise<T> | undefined;
   if (!p) {
-    p = fetch(path).then(async (r) => {
+    p = fetch(versioned(path)).then(async (r) => {
       if (!r.ok) {
         const body = (await r.json().catch(() => ({}))) as { error?: string };
         throw new ApiError(r.status, body.error ?? r.statusText);
@@ -229,13 +235,15 @@ export interface Catalogue {
 let catalogueMemo: { src: unknown; value: Catalogue } | null = null;
 
 export function useCatalogue(): Loadable<Catalogue> {
-  const raw = useApi<{ columns: string[]; rows: unknown[][] }>("/api/catalogue");
+  const raw = useApi<{ columns?: string[]; rows?: unknown[][]; items?: CatalogueItem[] }>("/api/catalogue");
   return useMemo<Loadable<Catalogue>>(() => {
     if (raw.state !== "ok") return raw;
     // Shared across components: the catalogue is ~8k rows, build the objects once.
     if (catalogueMemo?.src === raw.data) return { state: "ok", data: catalogueMemo.value };
-    const { columns, rows } = raw.data;
-    const items = rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])) as unknown as CatalogueItem);
+    const { columns, rows, items: legacy } = raw.data;
+    if (!legacy && !(columns && rows)) return { state: "error", error: new ApiError(500, "unexpected catalogue format") };
+    // `items` is the pre-v3 format, still possible from an old cache entry.
+    const items = legacy ?? rows!.map((r) => Object.fromEntries(columns!.map((c, i) => [c, r[i]])) as unknown as CatalogueItem);
     const byIdx: CatalogueItem[] = [];
     for (const it of items) byIdx[it.idx] = it;
     const value = { items, byId: new Map(items.map((i) => [i.id, i])), byIdx };
@@ -250,7 +258,7 @@ export function useRanks(method: string | null): Loadable<RankMap> {
   const raw = useApi<RanksResponse>(method ? `/api/ranks?m=${encodeURIComponent(method)}` : null);
   return useMemo<Loadable<RankMap>>(() => {
     if (raw.state !== "ok") return raw;
-    return { state: "ok", data: new Map(raw.data.ranks.map(([id, rank, score]) => [id, { rank, score }])) };
+    return { state: "ok", data: new Map((raw.data.ranks ?? []).map(([id, rank, score]) => [id, { rank, score }])) };
   }, [raw]);
 }
 
@@ -264,7 +272,7 @@ export function useManyRanks(methods: string[]): Loadable<Record<string, RankMap
       (rs) => {
         if (!alive) return;
         const out: Record<string, RankMap> = {};
-        rs.forEach((r) => (out[r.method] = new Map(r.ranks.map(([id, rank, score]) => [id, { rank, score }]))));
+        rs.forEach((r) => (out[r.method] = new Map((r.ranks ?? []).map(([id, rank, score]) => [id, { rank, score }]))));
         setState({ key, value: { state: "ok", data: out } });
       },
       (error: Error) => alive && setState({ key, value: { state: "error", error } }),
@@ -289,13 +297,18 @@ export function useVn(id: number): Loadable<VnDetail> {
   return useMemo<Loadable<VnDetail>>(() => {
     if (raw.state !== "ok") return raw;
     const v = raw.data;
+    // Arrays from the v3 worker; objects (pre-v3) are passed through.
+    const expand = <T,>(list: unknown, f: (row: never[]) => T): T[] =>
+      Array.isArray(list) ? list.map((row) => (Array.isArray(row) ? f(row as never[]) : (row as T))) : [];
     return {
       state: "ok",
       data: {
         ...v,
-        neighbors: v.neighbors.map(([nid, wins, losses, common]) => ({ id: nid, wins, losses, common })),
-        relations: v.relations.map(([rid, relation]) => ({ id: rid, relation })),
-        similar: v.similar.map(([sid, sim, common]) => ({ id: sid, sim, common })),
+        analysis: { ...v.analysis, years: v.analysis?.years ?? [], labels: v.analysis?.labels ?? {} },
+        history: v.history ?? [],
+        neighbors: expand(v.neighbors, ([nid, wins, losses, common]) => ({ id: nid, wins, losses, common })),
+        relations: expand(v.relations, ([rid, relation]) => ({ id: rid, relation })),
+        similar: expand(v.similar, ([sid, sim, common]) => ({ id: sid, sim, common })),
       },
     };
   }, [raw]);

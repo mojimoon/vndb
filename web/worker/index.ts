@@ -7,6 +7,9 @@ const VOTER_SHARDS = 1024;
 const VN_NOTE_SHARDS = 512;
 const USER_NOTE_SHARDS = 1024;
 const NOTES_PAGE = 30;
+// Part of every edge-cache key: bump together with API_VERSION in src/lib/api.ts
+// whenever a response format changes, so cached old-format responses are never reused.
+const API_VERSION = 3;
 
 interface Info {
   methods: string[];
@@ -57,6 +60,7 @@ async function cached(c: AppContext, build: () => Promise<string | object | null
   const snapshot = c.get("meta").snapshot;
   const url = new URL(c.req.url);
   url.searchParams.set("__snapshot", snapshot);
+  url.searchParams.set("__api", String(API_VERSION));
   const key = new Request(url.toString(), { method: "GET" });
   const cache = caches.default;
   const hit = await cache.match(key);
