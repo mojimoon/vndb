@@ -1,5 +1,41 @@
 import { useState } from "react";
 
+/** 1234 -> "1.2k", 0.153 -> "0.15" for axis ticks. */
+export function compact(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 1e6) return `${+(v / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${+(v / 1e3).toFixed(1)}k`;
+  if (Number.isInteger(v)) return String(v);
+  return String(+v.toFixed(2));
+}
+
+/** ~3 round tick values from 0 to max (inclusive of a round top). */
+function niceTicks(max: number): number[] {
+  if (max <= 0) return [0];
+  const raw = max / 3;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((st) => st >= raw) ?? raw;
+  const ticks = [];
+  for (let v = 0; v <= max + 1e-9; v += step) ticks.push(+v.toFixed(10));
+  if (ticks[ticks.length - 1] < max) ticks.push(+(ticks[ticks.length - 1] + step).toFixed(10));
+  return ticks;
+}
+
+function YAxis({ ticks, y, x, format = compact, width }: { ticks: number[]; y: (v: number) => number; x: number; format?: (v: number) => string; width: number }) {
+  return (
+    <g>
+      {ticks.map((v) => (
+        <g key={v}>
+          <line x1={x} x2={width} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeWidth={1} />
+          <text x={x - 6} y={y(v) + 4} textAnchor="end" fontSize={11} fill="var(--text-3)">
+            {format(v)}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
 /** Single-series bar chart with a hover readout. Values are magnitudes, so the
  *  y axis starts at zero; bars get 4px rounded tops and 2px gaps. */
 export function BarChart({
@@ -14,13 +50,15 @@ export function BarChart({
   label: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const max = Math.max(1, ...data.map((d) => d.y));
   const W = 600;
   const H = height;
+  const padL = 40;
   const padB = 22;
   const padT = 8;
-  const bw = W / data.length;
-  const ticks = [0, 0.5, 1].map((f) => f * max);
+  const ticks = niceTicks(Math.max(1, ...data.map((d) => d.y)));
+  const max = ticks[ticks.length - 1];
+  const y = (v: number) => padT + (H - padB - padT) * (1 - v / max);
+  const bw = (W - padL) / data.length;
   const h = hover !== null ? data[hover] : null;
   // Label every bar when there are few, otherwise about 8 labels.
   const every = data.length <= 12 ? 1 : Math.ceil(data.length / 8);
@@ -35,21 +73,18 @@ export function BarChart({
         ) : null}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
-        {ticks.map((v) => {
-          const y = padT + (H - padB - padT) * (1 - v / max);
-          return <line key={v} x1={0} x2={W} y1={y} y2={y} stroke="var(--border)" strokeWidth={1} />;
-        })}
+        <YAxis ticks={ticks} y={y} x={padL} width={W} />
         {data.map((d, i) => {
-          const bh = ((H - padB - padT) * d.y) / max;
-          const x = i * bw + 1;
+          const bh = H - padB - y(d.y);
+          const x = padL + i * bw + 1;
           const w = Math.max(1, bw - 2);
-          const y = H - padB - bh;
+          const top = H - padB - bh;
           const r = Math.min(4, w / 2, bh);
           return (
-            <g key={d.x} onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} tabIndex={-1}>
-              <rect x={i * bw} y={0} width={bw} height={H - padB} fill="transparent" />
+            <g key={d.x} onMouseEnter={() => setHover(i)}>
+              <rect x={padL + i * bw} y={0} width={bw} height={H - padB} fill="transparent" />
               <path
-                d={`M${x},${H - padB} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${H - padB} Z`}
+                d={`M${x},${H - padB} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${H - padB} Z`}
                 fill="var(--accent)"
                 opacity={hover === null || hover === i ? 1 : 0.55}
               />
@@ -82,13 +117,14 @@ export function LineChart({
   if (!data.length) return null;
   const W = 600;
   const H = height;
+  const padL = 40;
   const padB = 22;
   const padT = 10;
   const ys = data.map((d) => d.y);
   const lo = Math.floor(Math.min(...ys) * 2) / 2;
-  const hi = Math.ceil(Math.max(...ys) * 2) / 2 || lo + 1;
-  const step = W / data.length;
-  const px = (i: number) => i * step + step / 2;
+  const hi = Math.max(Math.ceil(Math.max(...ys) * 2) / 2, lo + 0.5);
+  const step = (W - padL) / data.length;
+  const px = (i: number) => padL + i * step + step / 2;
   const py = (v: number) => padT + (H - padB - padT) * (1 - (v - lo) / (hi - lo || 1));
   const every = Math.ceil(data.length / 8);
   const h = hover !== null ? data[hover] : null;
@@ -99,21 +135,15 @@ export function LineChart({
           <>
             <span className="font-medium text-ink">{h.x}</span>: {format(h.y)}
           </>
-        ) : (
-          <span className="text-ink-3">
-            {format(lo)} – {format(hi)}
-          </span>
-        )}
+        ) : null}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
-        {[lo, (lo + hi) / 2, hi].map((v) => (
-          <line key={v} x1={0} x2={W} y1={py(v)} y2={py(v)} stroke="var(--border)" strokeWidth={1} />
-        ))}
+        <YAxis ticks={[lo, (lo + hi) / 2, hi]} y={py} x={padL} width={W} format={format} />
         {hover !== null && <line x1={px(hover)} x2={px(hover)} y1={padT} y2={H - padB} stroke="var(--text-3)" strokeWidth={1} />}
         <polyline points={data.map((d, i) => `${px(i)},${py(d.y)}`).join(" ")} fill="none" stroke="var(--accent)" strokeWidth={2} />
         {data.map((d, i) => (
           <g key={d.x} onMouseEnter={() => setHover(i)}>
-            <rect x={i * step} y={0} width={step} height={H} fill="transparent" />
+            <rect x={padL + i * step} y={0} width={step} height={H} fill="transparent" />
             <circle cx={px(i)} cy={py(d.y)} r={hover === i ? 5 : 3} fill="var(--accent)" stroke="var(--surface)" strokeWidth={2} />
             {i % every === 0 && (
               <text x={px(i)} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-3)">
@@ -243,12 +273,15 @@ export function PairedBars({ x, a, b, names, label }: { x: string[]; a: number[]
   const tb = b.reduce((s, v) => s + v, 0) || 1;
   const sa = a.map((v) => v / ta);
   const sb = b.map((v) => v / tb);
-  const max = Math.max(0.01, ...sa, ...sb);
+  const ticks = niceTicks(Math.max(0.01, ...sa, ...sb));
+  const max = ticks[ticks.length - 1];
   const W = 600;
   const H = 180;
+  const padL = 40;
   const padB = 22;
   const padT = 8;
-  const gw = W / x.length;
+  const yOf = (v: number) => padT + (H - padB - padT) * (1 - v / max);
+  const gw = (W - padL) / x.length;
   const bw = (gw - 6) / 2;
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
   return (
@@ -264,17 +297,17 @@ export function PairedBars({ x, a, b, names, label }: { x: string[]; a: number[]
         </div>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
-        <line x1={0} x2={W} y1={H - padB} y2={H - padB} stroke="var(--border)" />
+        <YAxis ticks={ticks} y={yOf} x={padL} width={W} format={(v) => `${+(v * 100).toFixed(1)}%`} />
         {x.map((label, i) => {
-          const ha = ((H - padB - padT) * sa[i]) / max;
-          const hb = ((H - padB - padT) * sb[i]) / max;
-          const gx = i * gw + 2;
+          const ha = H - padB - yOf(sa[i]);
+          const hb = H - padB - yOf(sb[i]);
+          const gx = padL + i * gw + 2;
           return (
             <g key={label} onMouseEnter={() => setHover(i)}>
-              <rect x={i * gw} y={0} width={gw} height={H} fill="transparent" />
+              <rect x={padL + i * gw} y={0} width={gw} height={H} fill="transparent" />
               <rect x={gx} y={H - padB - ha} width={bw} height={ha} rx={3} fill={SERIES[0]} />
               <rect x={gx + bw + 2} y={H - padB - hb} width={bw} height={hb} rx={3} fill={SERIES[1]} />
-              <text x={i * gw + gw / 2} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-3)">
+              <text x={padL + i * gw + gw / 2} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--text-3)">
                 {label}
               </text>
             </g>
