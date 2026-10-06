@@ -18,3 +18,16 @@ dev/checkpoints/
 
 dev/logs/
 playground/tmp/*.txt
+
+# pipeline
+pipeline/out/
+**/__pycache__/
+.pytest_cache/
+
+# web
+web/node_modules/
+web/dist/
+web/.wrangler/
+web/.dev.vars*
+web/worker/worker-configuration.d.ts
+*.tsbuildinfo

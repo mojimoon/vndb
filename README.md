@@ -2,7 +2,7 @@
 
 适用于 [Visual Novel Database](https://vndb.org/) (VNDB) 的基于偏序网络 (Partial Order Network, PONet) 的排名算法 + [科学排名](https://ikely.me/2016/02/05/%E4%BD%BF%E7%94%A8-rankit-%E6%9E%84%E5%BB%BA%E6%9B%B4%E7%A7%91%E5%AD%A6%E7%9A%84%E6%8E%92%E5%90%8D/)。
 
-目前正在建设中。
+数据每天从 VNDB 数据库转储自动更新，网站运行在 Cloudflare Workers + D1 上。
 
 ## 背景
 
@@ -50,53 +50,110 @@ $$\text{sp}(x_k) = \frac{(|\{x_i | x_i < x_k\}| + 0.5 \cdot |\{x_i (i \neq k) | 
 
 其中 $|\{x_i | x_i < x_k\}|$ 表示小于 $x_k$ 的评分数量。这个项目中也尝试了使用 sample percentile 来进行排名。
 
-## 使用方法
+## 架构
 
-本项目的代码分为两个部分，数据使用 [Supabase](https://supabase.com/) 存储。
-
-### 数据处理
-
-见 [run.sh](run.sh)。使用前需要先添加执行权限：
-
-```bash
-chmod +x run.sh
+```
+VNDB dump ──► pipeline/ (Python) ──► snapshot.sql ──► Cloudflare D1 ──► web/worker (Hono API) ──► web/src (React SPA)
+             每日 12:07 UTC，GitHub Actions                              边缘缓存，按快照失效
 ```
 
-1. 下载 database dump，解压缩到 `db` 目录下。
+| 目录 | 内容 |
+| --- | --- |
+| `pipeline/` | 数据管线：读取转储、构建偏序网络、计算 57 种排名、导出 D1 快照 SQL |
+| `web/` | Cloudflare Worker（API + 静态资源）与 React 前端；`web/migrations/` 为 D1 表结构 |
+| `.github/workflows/` | `refresh.yml` 每日更新数据，`deploy.yml` 部署网站，`ci.yml` 测试，`dump-probe.yml` 检查转储表结构 |
+| `research/` | 旧版脚本、评论情感分类实验（DistilBERT / Transformer）和 playground |
+| `docs/architecture.md` | 数据库设计与 D1 免费额度估算（英文） |
+
+### 为什么从 Supabase 换到 D1 之后放得下
+
+旧方案把逐用户评分（`ulist`，数百万行）整个上传到数据库。新方案中原始评分和 N² 的作品对矩阵只在离线管线里计算，数据库只保存网站需要读取的结果，并且按「一次读取一行」打包：
+
+| 表 | 行数（2026-10 转储） | 内容 |
+| --- | --- | --- |
+| `vn` | 7,945 | 每部作品一行：57 种方法的排名、评分分析、正面交锋、相似作品、排名历史（JSON 列） |
+| `producer` | 2,410 | 开发商 |
+| `pair_block` | 7,948 | 全部 489 万对可比较作品的胜负数据，每对 8 字节二进制，任意两部作品都能精确对比 |
+| `user_block` | 2,048 | 55,778 位用户的评分、相似用户和推荐，按 `uid % 2048` 分片 |
+| `user_name` | 64 | 用户名 → uid 索引 |
+| `meta` | 4 | 快照编号、方法列表、统计数据、方法一致性矩阵 |
+
+每日更新共写入约 2 万行（D1 免费额度为每天 10 万行），数据库预计约 100 MB（免费额度单库 500 MB）。导入脚本先建好新表、最后一次性替换旧表，读者不会看到新旧混合的数据。详见 [docs/architecture.md](docs/architecture.md)。
+
+### 功能
+
+- **排行**：57 种方法任选，可并排对比最多 3 种方法、自选显示列、导出 CSV；按语言、长度、年份、票数、开发商筛选；「年度最佳」「与 VNDB 的分歧」「排名变动」分页。
+- **作品页**：概览、评分分析（分布、每年评分、列表状态、评分者心中的位置、评分者偏好）、各方法排名与排名历史、与任意作品的正面交锋、「喜欢它的人也喜欢」。
+- **用户页**：评分统计与口味分析（与 VNDB 评分的相关性、比大家更喜欢/更不喜欢的作品）、全部评分、基于相似用户的推荐、相似用户。只收录在进入排名的作品上至少有 5 个评分的用户。
+- **对比**：任意两部作品或两位用户并排对比。
+
+## 使用方法
+
+### 1. 一次性配置 Cloudflare
+
+需要 Node.js 22+。
+
+```bash
+cd web
+npm install
+npx wrangler login
+npx wrangler d1 create vndb          # 把输出的 database_id 填入 web/wrangler.jsonc
+npm run deploy                       # 部署 Worker 和前端；表结构由每日导入的快照创建
+```
+
+自定义域名：在 `web/wrangler.jsonc` 中取消注释 `routes` 并填入域名（域名需已托管在 Cloudflare），或在 Cloudflare 控制台的 Worker → Settings → Domains & Routes 中添加。注意 Workers 的边缘缓存（Cache API）只在自定义域名上生效，`*.workers.dev` 上每次请求都会读数据库。
+
+### 2. 配置自动更新（GitHub Actions）
+
+在 Cloudflare 创建 API Token：控制台右上角头像 → **My Profile → API Tokens → Create Token**，选择 **Edit Cloudflare Workers** 模板，再点 **+ Add more** 增加一条权限 **Account · D1 · Edit**；Account Resources 选择你的账户，Zone Resources 选择你的域名（或 All zones）。
+
+然后在 GitHub 仓库 **Settings → Secrets and variables → Actions** 中添加：
+
+| Secret | 值 |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | 上面创建的 Token |
+| `CLOUDFLARE_ACCOUNT_ID` | 控制台 Workers & Pages 页面右侧的 Account ID |
+
+之后：
+
+- `refresh.yml` 每天 12:07 UTC（VNDB 约在 08:00 UTC 发布转储）下载转储、重新计算并导入 D1；也可以在 Actions 页面手动运行。定时任务只在默认分支上触发。
+- `deploy.yml` 在 `main` 分支的 `web/` 有改动时自动部署。
+
+### 3. 本地开发
+
+前端（使用仓库自带的**合成**示例数据，不是真实 VNDB 数据）：
+
+```bash
+cd web
+npm install
+npm run db:seed:local
+npm run dev                          # http://localhost:5173
+```
+
+数据管线（需要 Python 3.11+；完整计算约需数 GB 内存）：
 
 ```bash
 curl -L -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
-mkdir -p db
-tar -I zstd -xf db.tar.zst -C db/
-rm db.tar.zst
-```
+mkdir -p db && tar -I zstd -xf db.tar.zst -C db && rm db.tar.zst
 
-注意：在 Windows PowerShell 中，`curl` 是 `Invoke-WebRequest` 的别名，因此需要使用 `curl.exe` 来调用 curl。
-
-```powershell
-curl.exe -L -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
-```
-
-此外，`tar.exe` 无法解压缩 `.tar.zst` 文件，请使用 [7-Zip](https://www.7-zip.org/) 等工具进行解压缩。
-
-2. 复制 `dev/.env.example` 为 `dev/.env`，并填入 Supabase 环境变量。可以在官网 [这一页](https://supabase.com/docs/guides/getting-started/quickstarts/nextjs) 一键获取。
-
-3. 安装依赖、运行脚本。
-
-```bash
-cd dev
+cd pipeline
 pip install -r requirements.txt
-python main.py
+python -m vndb_rank --dump ../db --out out          # 约 10 分钟；--skip-rankit / --skip-users 可跳过耗时步骤
+npx --prefix ../web wrangler d1 execute vndb --local --file out/snapshot.sql   # 导入本地 D1
+python -m pytest                                     # 测试（使用合成数据）
 ```
 
-### 前端展示
+## 与旧版的差异
 
-框架：React TypeScript + Next.js 全栈框架。推荐使用 [pnpm](https://pnpm.io/) 进行包管理。
+重写时修复了旧版 `research/legacy_main.py` 中的几个问题，因此结果与旧版不完全相同：
 
-同样地，复制 `www/.env.example` 为 `www/.env.local`，并填入 Supabase 环境变量。
+- **作品对计数丢失约一半**：旧版按评分顺序给作品编号，但按 vid 顺序遍历用户列表，约一半的比较落在矩阵下三角，导出时只读取上三角而被丢弃。
+- rankit 的三个 Markov 变体会原地修改共享的输入表，导致之后的 OD、Difference 等方法使用了被改动过的比分。
+- Elo 的评分被截断为整数，且按人数放大的更新在热门作品对上会发散；现改为每对作品一场比赛、以偏好比例为结果的标准 Elo。
+- 熵加权方法的归一化项符号错误；无随机种子的「VI」方法替换为 Bradley–Terry（MM 算法）。
+- 「正面交锋」各类别现在分别在所有作品对中选取，而不是只在共同评分最多的 10 部中选取。
+- 排除了被 VNDB 标记为忽略评分（`ign_votes`）的用户。这些账号贡献了约 220 万对作品比较（总数从 711 万降到 489 万），对排名影响明显。
 
-```bash
-cd www
-pnpm install
-pnpm run dev
-```
+## 许可
+
+数据来自 [VNDB 数据库转储](https://vndb.org/d14)，依 ODbL 授权。
