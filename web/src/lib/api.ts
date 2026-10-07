@@ -24,8 +24,8 @@ export interface CatalogueItem extends TitleFields {
   length: number | null;
   trend: number | null;
   vndb_rank: number;
-  /** Rank under the default ranking ("SciRanking"). */
-  sci_rank: number;
+  /** Rank under the default ranking ("SciRanking"); null in snapshots older than API v4. */
+  sci_rank: number | null;
   search: string;
 }
 
@@ -268,6 +268,7 @@ export function useCatalogue(): Loadable<Catalogue> {
     if (!legacy && !(columns && rows)) return { state: "error", error: new ApiError(500, "unexpected catalogue format") };
     // `items` is the pre-v3 format, still possible from an old cache entry.
     const items = legacy ?? rows!.map((r) => Object.fromEntries(columns!.map((c, i) => [c, r[i]])) as unknown as CatalogueItem);
+    for (const it of items) it.sci_rank ??= null;
     const byIdx: CatalogueItem[] = [];
     for (const it of items) byIdx[it.idx] = it;
     const value = { items, byId: new Map(items.map((i) => [i.id, i])), byIdx };

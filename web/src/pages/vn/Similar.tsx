@@ -42,7 +42,7 @@ export default function Similar() {
                 </div>
                 {o && (
                   <dl className="mt-1 grid grid-cols-4 gap-2 pl-7 text-xs">
-                    <Fact k="SciRanking" v={`#${o.sci_rank}`} />
+                    <Fact k="SciRanking" v={o.sci_rank === null ? "—" : `#${o.sci_rank}`} />
                     <Fact k={t("rank.col.rating")} v={o.rating?.toFixed(2) ?? "—"} />
                     <Fact k={t("rank.col.votes")} v={o.votes.toLocaleString()} />
                     <Fact k={t("sim.similarity")} v={s.sim.toFixed(3)} />

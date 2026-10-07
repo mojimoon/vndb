@@ -138,9 +138,12 @@ def test_end_to_end_loads_into_sqlite(snapshot):
     assert all(db.execute("SELECT count(*) FROM producer WHERE id = ?", (d,)).fetchone()[0] == 1
                for (d,) in db.execute("SELECT DISTINCT dev_id FROM vn WHERE dev_id IS NOT NULL"))
 
-    # Re-importing over an existing database swaps the tables cleanly.
+    # Re-importing over an existing database replaces the tables cleanly, and
+    # reuses the freed pages instead of holding two copies at once.
+    pages = db.execute("PRAGMA page_count").fetchone()[0]
     db.executescript(sql.read_text())
     assert db.execute("SELECT count(*) FROM vn").fetchone()[0] == n
+    assert db.execute("PRAGMA page_count").fetchone()[0] < pages * 1.15
 
 
 def test_rankings_track_latent_quality(snapshot):

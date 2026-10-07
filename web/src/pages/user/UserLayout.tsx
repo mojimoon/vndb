@@ -10,7 +10,7 @@ export interface JoinedVote {
   vn: CatalogueItem;
   vote: number; // 1-10 (may be fractional, e.g. 7.5)
   diff: number | null; // vote - VNDB rating
-  sci: number; // the title's SciRanking percentile, 0-1 (1 = #1)
+  sci: number | null; // the title's SciRanking percentile, 0-1 (1 = #1)
 }
 
 export interface UserSummary {
@@ -28,7 +28,7 @@ export function joinVotes(user: UserData, cat: Catalogue): JoinedVote[] {
   return user.votes
     .map(([idx, v]) => {
       const vn = cat.byIdx[idx];
-      return vn ? { vn, vote: v / 10, diff: vn.rating !== null ? v / 10 - vn.rating : null, sci: 1 - (vn.sci_rank - 1) / (n - 1) } : null;
+      return vn ? { vn, vote: v / 10, diff: vn.rating !== null ? v / 10 - vn.rating : null, sci: vn.sci_rank === null ? null : 1 - (vn.sci_rank - 1) / (n - 1) } : null;
     })
     .filter((x): x is JoinedVote => x !== null);
 }
@@ -45,7 +45,10 @@ export function summarize(votes: JoinedVote[]): UserSummary {
     mean,
     std,
     corr: pearson(rated.map((v) => v.vote), rated.map((v) => v.vn.rating!)),
-    corrSci: pearson(votes.map((v) => v.vote), votes.map((v) => v.sci)),
+    corrSci: (() => {
+      const ranked = votes.filter((v) => v.sci !== null);
+      return pearson(ranked.map((v) => v.vote), ranked.map((v) => v.sci!));
+    })(),
     generosity: rated.length ? rated.reduce((s, v) => s + v.diff!, 0) / rated.length : null,
     hist,
   };

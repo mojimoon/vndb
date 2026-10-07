@@ -7,7 +7,7 @@ import { useShowMore } from "../../components/ShowMore";
 import { useUserContext, type JoinedVote } from "./UserLayout";
 
 const signed = (x: number | null, d = 2) => (x === null ? "—" : `${x > 0 ? "+" : ""}${x.toFixed(d)}`);
-const bucket = (x: number) => Math.min(9, Math.max(0, Math.floor(x)));
+const bucket = (x: number) => (Number.isFinite(x) ? Math.min(9, Math.max(0, Math.floor(x))) : 0);
 const grid = () => Array.from({ length: 10 }, () => Array(10).fill(0) as number[]);
 
 export default function UserOverview() {
@@ -23,7 +23,7 @@ export default function UserOverview() {
     const sp = samplePercentiles(votes.map((v) => v.vote));
     votes.forEach((v, i) => {
       if (v.vn.rating !== null) vndb[bucket(v.vn.rating - 1)][bucket(v.vote - 1)]++;
-      sci[bucket(v.sci * 10)][bucket(sp[i] * 10)]++;
+      if (v.sci !== null) sci[bucket(v.sci * 10)][bucket(sp[i] * 10)]++;
     });
     return { vndb, sci };
   }, [votes]);
@@ -50,10 +50,12 @@ export default function UserOverview() {
           <p className="mb-2 text-xs text-ink-2">{t("user.heatVndbHint")}</p>
           <Matrix data={heat.vndb} labels={scoreLabels} xName={t("user.axisVote")} yName={t("user.axisVndb")} label={t("user.heatVndb")} />
         </Card>
-        <Card title={t("user.heatSci")}>
-          <p className="mb-2 text-xs text-ink-2">{t("user.heatSciHint")}</p>
-          <Matrix data={heat.sci} labels={decileLabels} xName={t("user.axisSp")} yName={t("user.axisSci")} label={t("user.heatSci")} />
-        </Card>
+        {s.corrSci !== null && (
+          <Card title={t("user.heatSci")}>
+            <p className="mb-2 text-xs text-ink-2">{t("user.heatSciHint")}</p>
+            <Matrix data={heat.sci} labels={decileLabels} xName={t("user.axisSp")} yName={t("user.axisSci")} label={t("user.heatSci")} />
+          </Card>
+        )}
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <DiffList title={t("user.loved")} rows={loved} />
