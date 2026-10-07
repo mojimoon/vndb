@@ -1,0 +1,40 @@
+[b]VNDB SciRanking：用「偏序网络 + 科学排名」重排 VNDB 视觉小说榜[/b]
+
+网址：[url=https://vndb.mojimoon.top]https://vndb.mojimoon.top[/url]（中文 / English，免登录）
+源码：[url=https://github.com/mojimoon/vndb]github.com/mojimoon/vndb[/url]
+
+[b]为什么要再做一个排行？[/b]
+VNDB 的贝叶斯评分把每个人的分数直接平均。但「8 分」对习惯打 9 分的人和习惯打 6 分的人含义完全不同；冷门作品只有几十位评分者，热门作品则有上万。
+SciRanking 不直接比较平均分，而是只看[b]同一个人[/b]对两部作品的评价：凡是同时评过两部作品的用户，都算作这两部作品之间的一场「比赛」。全站约 8 千部作品（≥ 30 票）、190 万条评分，组成约 490 万对可比较的作品；再用体育排名中常用的方法（Massey、Colley、Bradley–Terry、Elo 等）求出每部作品的实力。
+
+[b]默认排名（综合排名）怎么来的？[/b]
+综合排名是 9 种排名的 Borda 计数：Massey 与差值法（百分位）、Colley（偏好人数 / 百分位）、Bradley–Terry、Elo。
+它们是这样挑出来的：把评分者随机分成两半、各自重算一遍，在剔除「热门程度」的影响之后，这几种方法两半的结果最一致；同时它与人气的相关性（ρ = 0.38）接近 VNDB 自身的评分（0.34），排名前列也不会被只有几十票的作品占据。完整的实验记录见 [url=https://github.com/mojimoon/vndb/blob/main/docs/ranking-experiments.md]ranking-experiments.md[/url]。
+除此之外还提供 41 种排名方法可选，可以把最多 3 种方法并排对比。
+
+截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/ranking.png]排行榜[/url]
+
+[b]能做什么[/b]
+[b]· 排行[/b]：按开发商、年份、语言、长度、票数、评分筛选；自选显示列；年度最佳、与 VNDB 分歧最大的作品、近 7 日排名变动；导出 CSV。
+[b]· 作品页[/b]：评分分布与累计占比、「在评分者心中的位置」（该作品在每位评分者自己列表中的百分位）、每年评分数与平均分、各方法排名与历史曲线。
+[b]· 筛选评分者[/b]：按列表状态（已完成 / 弃坑……）、评分者的评分数、评分者与 VNDB / SciRanking 的相关性筛选，重新计算这些统计。
+
+截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/vn-ratings.png]评分分析与评分者筛选[/url]
+
+[b]· 正面交锋[/b]：任意两部作品，看共同评分者里有多少人更喜欢哪一部，以及 10×10 的共同评分矩阵（原始分 / 百分位）。
+[b]· 相似作品[/b]：喜欢本作的人还喜欢什么，附正面交锋结果。
+
+截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/compare-vn.png]作品对比[/url]
+
+[b]· 用户页[/b]：输入 VNDB 用户名即可查看（只需在已排名作品上有 ≥ 5 个公开评分）：口味分析、与 VNDB / SciRanking 的相关性、评分 × VNDB 评分热力图、基于相似用户的推荐、相似用户。
+[b]· 用户对比[/b]：两人的散点图、分歧最大的作品、共同喜欢 / 讨厌的作品，点击作品可查看双方短评。
+[b]· 短评[/b]：VNDB 用户列表里的备注（≥ 20 字），可按时间、评分、在评分者心中的位置排序，按列表状态筛选。
+
+截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/user.png]用户页[/url]
+
+[b]· 开发商[/b]：开发商排行与开发商页面，可与其他开发商对比。
+
+[b]数据与更新[/b]
+数据来自 [url=https://vndb.org/d14]VNDB 数据库转储[/url]（ODbL 协议），每天自动更新一次。排名只用公开评分；被 VNDB 标记为忽略的用户不计入。
+
+欢迎试用、挑错、提建议，回帖或在 GitHub 开 issue 都可以。觉得有用的话也欢迎点个 Star。
