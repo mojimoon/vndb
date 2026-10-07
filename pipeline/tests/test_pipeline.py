@@ -86,6 +86,24 @@ def test_methods_prefer_dominant_item():
         assert s[0] > s[1] > s[2], fn.__name__
 
 
+def test_grand_ranking_is_borda_of_g2_inputs():
+    from vndb_rank.methods import GRAND_INPUTS, borda, compute_all, rankit_scores
+    rng = np.random.default_rng(3)
+    quality = rng.normal(size=12)
+    rows = []
+    for u in range(80):
+        bias = rng.normal()
+        for i in rng.choice(12, size=8, replace=False):
+            rows.append((u, int(i), int(np.clip(np.rint(6 + 1.5 * quality[i] + bias + rng.normal()), 1, 10) * 10)))
+    p = build_pairs(make_votes(rows), 12, min_common=5)
+    df = compute_all(p, 12)
+    assert len(GRAND_INPUTS) == 9 and set(GRAND_INPUTS) <= set(df.columns)
+    assert not {"difference_prob", "difference_ari", "difference_geo"} & set(df.columns)
+    assert np.allclose(df["borda_grand"], borda(df[GRAND_INPUTS]))
+    assert np.allclose(df["difference_sp_ari"], rankit_scores(p, 12, "sp_ari", "difference"), equal_nan=True)
+    assert spearmanr(df["borda_grand"], quality)[0] > 0.7
+
+
 def test_neighbors_union_contains_each_category_top():
     rows = []
     rng = np.random.default_rng(3)
@@ -226,8 +244,9 @@ def test_prebuilt_docs(snapshot):
     row = dict(zip(cat["columns"], cat["rows"][0]))
     assert row["idx"] == 0 and row["title"] and "search" in row
     info = json.loads(db.execute("SELECT value FROM meta WHERE key='info'").fetchone()[0])
-    removed = {"po_rw", "massey_prob", "keener_prob", "markov_rv_sp_geo", "difference_ari"}
-    assert not removed & set(info["methods"]) and len(info["methods"]) == 40  # 39 methods + vndb
+    removed = {"po_rw", "massey_prob", "keener_prob", "markov_rv_sp_geo", "difference_ari", "difference_prob"}
+    assert not removed & set(info["methods"]) and len(info["methods"]) == 42  # 41 methods + vndb
+    assert {"difference_sp_ari", "difference_sp_geo"} <= set(info["methods"])
     for m in ["borda_grand", "vndb"]:
         r = _doc(db, f"ranks:{m}")
         assert r["method"] == m and [x[1] for x in r["ranks"]] == sorted(x[1] for x in r["ranks"])

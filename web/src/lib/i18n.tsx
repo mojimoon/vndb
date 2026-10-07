@@ -647,7 +647,10 @@ const VARIABLES: Record<string, Text> = {
 const MERGED: Record<string, { name: Text; desc: Text }> = {
   borda_grand: {
     name: { zh: "综合排名", en: "Grand ranking" },
-    desc: { zh: "对 14 种最稳定的科学排名（Massey、Colley、Markov 差值类、攻防 × 偏好人数 / 百分位）做 Borda 计数。", en: "Borda count over the 14 most stable scientific rankings (Massey, Colley, margin-based Markov and offence–defence × preference counts / percentiles)." },
+    desc: {
+      zh: "对 9 种排名做 Borda 计数：Massey 与差值法（百分位）、Colley（偏好人数 / 百分位）、Bradley–Terry 和 Elo。它们在把评分者随机分成两半、剔除热门程度的影响后，两半结果最一致；差值法让排名靠前的作品有足够的评分支撑。得分可换算为平均名次 ≈ 作品数 − 得分 / 9。",
+      en: "Borda count over 9 rankings: Massey and Difference on percentiles, Colley (preference counts / percentiles), Bradley–Terry and Elo. They agree best between two random halves of the voters once popularity is factored out; Difference keeps thinly voted titles from taking over the top. Average rank across them ≈ titles − score / 9.",
+    },
   },
   borda_sci: {
     name: { zh: "科学排名合并", en: "Scientific merge" },

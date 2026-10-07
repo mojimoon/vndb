@@ -43,11 +43,15 @@ log vote count). Dropped:
 | `po_rw` (random walk) | -0.04 | unrelated to every other method |
 | `keener_*` | 0.39-0.56 | rho ~0.75 with vote count: a popularity contest |
 | `markov_rv_*` | 0.42-0.62 | same (rho ~0.77) |
-| `difference_*` | 0.36-0.63 | top lists are simply the most-voted titles |
+| `difference_prob/ari/geo` | 0.35-0.62 | top lists are simply the most-voted titles |
 | `massey_prob` | 0.41 | raw preference counts let big pairs dominate |
 
 `po_total` (tau 0.63) shows the same bias but is kept as one of the original
-PONet scores, without being featured. 39 methods remain.
+PONet scores, without being featured. `difference_sp_ari` and
+`difference_sp_geo` were removed in v3 and added back in v5 as inputs of the
+grand ranking. 41 methods remain. The grand ranking (`borda_grand`) is a Borda
+count over 9 of them; see [ranking-experiments.md](ranking-experiments.md)
+for the full history of methods and the experiments behind the grand ranking.
 
 ## Schema (defined in `pipeline/vndb_rank/export.py`)
 

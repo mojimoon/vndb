@@ -8,7 +8,7 @@ Changes from the legacy research script (``research/legacy_main.py``):
 * ``po_elo`` plays one fractional-outcome match per pair (the count-weighted
   updates diverged) and keeps ratings as floats (they were truncated to ints).
 * ``po_entropy`` normalizes by the *sum* of entropies (one side was subtracted).
-* Several rankit variants were dropped (see RANKIT_RANKERS).
+* Several rankit variants were dropped (see RANKIT_RANKERS / RANKIT_EXCLUDE).
 * ``po_rw`` (random walk) is gone: on real data it was uncorrelated or
   negatively correlated with every other method (Kendall tau -0.25..0.19).
 * ``po_vi`` (unseeded gradient steps whose fancy-indexed updates dropped
@@ -37,9 +37,24 @@ RANKIT_VARIABLES = ["prob", "ari", "geo", "sp_ari", "sp_geo"]
 #   markov_rv_*   tau 0.42-0.62, rho ~0.77   -> same
 #   difference_*  tau 0.36-0.63; top lists are simply the most-voted titles
 #   massey_prob   tau 0.41; raw preference counts make big pairs dominate
-RANKIT_RANKERS = ["massey", "colley", "markov_rdv", "markov_sdv", "od"]
-RANKIT_EXCLUDE = {"massey_prob"}
-GRAND_VARIABLES = ["prob", "sp_ari", "sp_geo"]
+RANKIT_RANKERS = ["massey", "colley", "markov_rdv", "markov_sdv", "od", "difference"]
+# Difference stays only on percentile margins, where it is a grand-ranking input
+# (see GRAND_INPUTS); on counts and raw votes it just follows vote counts.
+RANKIT_EXCLUDE = {"massey_prob", "difference_prob", "difference_ari", "difference_geo"}
+# Algorithms merged by the per-variable Borda counts (unchanged since v3).
+MERGE_RANKERS = ["massey", "colley", "markov_rdv", "markov_sdv", "od"]
+# borda_grand ("G2" in docs/ranking-experiments.md): the inputs that rank most
+# consistently across two disjoint halves of the voters once popularity is
+# factored out, plus Difference on percentile margins as an evidence anchor
+# (without it, titles with ~50 votes take over the top). Popularity-driven
+# Markov variants and the count-margin outliers (massey_prob, difference_prob)
+# are left out.
+GRAND_INPUTS = [
+    "massey_sp_ari", "massey_sp_geo",
+    "colley_prob", "colley_sp_ari", "colley_sp_geo",
+    "difference_sp_ari", "difference_sp_geo",
+    "po_bt", "po_elo",
+]
 
 
 def _bincount2(a: np.ndarray, b: np.ndarray, wa: np.ndarray, wb: np.ndarray, n: int) -> np.ndarray:
@@ -199,7 +214,7 @@ def compute_all(p: Pairs, n: int, skip_rankit: bool = False) -> pd.DataFrame:
     df["borda_po"] = borda(df[PO_METHODS])
     if not skip_rankit:
         for var in RANKIT_VARIABLES:
-            df[f"borda_{var}"] = borda(df[[c for rk in RANKIT_RANKERS if (c := f"{rk}_{var}") in df]])
+            df[f"borda_{var}"] = borda(df[[c for rk in MERGE_RANKERS if (c := f"{rk}_{var}") in df]])
         df["borda_sci"] = borda(df[["borda_prob", "borda_ari", "borda_geo"]])
-        df["borda_grand"] = borda(df[[c for var in GRAND_VARIABLES for rk in RANKIT_RANKERS if (c := f"{rk}_{var}") in df]])
+        df["borda_grand"] = borda(df[GRAND_INPUTS])
     return df
