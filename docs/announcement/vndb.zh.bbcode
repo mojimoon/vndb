@@ -12,25 +12,25 @@ SciRanking 不直接比较平均分，而是只看[b]同一个人[/b]对两部�
 它们是这样挑出来的：把评分者随机分成两半、各自重算一遍，在剔除「热门程度」的影响之后，这几种方法两半的结果最一致；同时它与人气的相关性（ρ = 0.38）接近 VNDB 自身的评分（0.34），排名前列也不会被只有几十票的作品占据。完整的实验记录见 [url=https://github.com/mojimoon/vndb/blob/main/docs/ranking-experiments.md]ranking-experiments.md[/url]。
 除此之外还提供 41 种排名方法可选，可以把最多 3 种方法并排对比。
 
-截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/ranking.png]排行榜[/url]
+截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/zh/ranking.png]排行榜[/url]
 
 [b]能做什么[/b]
 [b]· 排行[/b]：按开发商、年份、语言、长度、票数、评分筛选；自选显示列；年度最佳、与 VNDB 分歧最大的作品、近 7 日排名变动；导出 CSV。
 [b]· 作品页[/b]：评分分布与累计占比、「在评分者心中的位置」（该作品在每位评分者自己列表中的百分位）、每年评分数与平均分、各方法排名与历史曲线。
 [b]· 筛选评分者[/b]：按列表状态（已完成 / 弃坑……）、评分者的评分数、评分者与 VNDB / SciRanking 的相关性筛选，重新计算这些统计。
 
-截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/vn-ratings.png]评分分析与评分者筛选[/url]
+截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/zh/vn-ratings.png]评分分析与评分者筛选[/url]
 
 [b]· 正面交锋[/b]：任意两部作品，看共同评分者里有多少人更喜欢哪一部，以及 10×10 的共同评分矩阵（原始分 / 百分位）。
 [b]· 相似作品[/b]：喜欢本作的人还喜欢什么，附正面交锋结果。
 
-截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/compare-vn.png]作品对比[/url]
+截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/zh/compare-vn.png]作品对比[/url]
 
 [b]· 用户页[/b]：输入 VNDB 用户名即可查看（只需在已排名作品上有 ≥ 5 个公开评分）：口味分析、与 VNDB / SciRanking 的相关性、评分 × VNDB 评分热力图、基于相似用户的推荐、相似用户。
 [b]· 用户对比[/b]：两人的散点图、分歧最大的作品、共同喜欢 / 讨厌的作品，点击作品可查看双方短评。
 [b]· 短评[/b]：VNDB 用户列表里的备注（≥ 20 字），可按时间、评分、在评分者心中的位置排序，按列表状态筛选。
 
-截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/user.png]用户页[/url]
+截图：[url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/zh/user.png]用户页[/url]
 
 [b]· 开发商[/b]：开发商排行与开发商页面，可与其他开发商对比。
 

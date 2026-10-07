@@ -9,8 +9,11 @@ Ready-to-paste BBCode posts introducing VNDB SciRanking:
 | [vndb.zh.bbcode](vndb.zh.bbcode) | VNDB forums, Chinese-speaking readers | Chinese |
 | [bangumi.en.bbcode](bangumi.en.bbcode) | Bangumi, English readers | English |
 
-Screenshots are in [img/](img). The posts reference them at
-`https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/…`,
+Screenshots are in [img/zh](img/zh) (Chinese interface, used by the Chinese
+posts) and [img/en](img/en) (English interface). They were taken from a local
+build loaded with the 2026-10-06 dump and the G2 grand ranking. The posts
+reference them at
+`https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/<lang>/…`,
 so the links work once this folder is on `main`. Bangumi renders `[img]`;
 VNDB's forum BBCode has no image tag, so the VNDB posts link the screenshots
 with `[url]` instead.
