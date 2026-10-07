@@ -24,7 +24,7 @@ dl.vndb.org dump (daily, ~08:00 UTC)
        │    neighbors.py  per-VN head-to-head opponents
        │    cf.py         similar users, recommendations, similar VNs
        │    storage.py    voter blobs, user / note shards, text parts, history
-       │    export.py     snapshot.sql (schema + data + table swap)
+       │    export.py     snapshot.sql (drop + recreate every table)
        └─ wrangler d1 execute --remote --file snapshot.sql
 Cloudflare D1  <──  Worker (Hono, web/worker/index.ts)  <──  React SPA (static assets)
 ```
@@ -106,14 +106,21 @@ joint endpoint reads; the browser does the filtering. The user-level fields
 are copied onto every vote (1.9M ranked votes × 13 bytes ≈ 24 MB) so the
 request never has to look users up.
 
-## Refresh: build, then swap
+## Refresh: replace in one import
 
-D1 rejects `BEGIN`/`COMMIT` in imported files. `snapshot.sql` therefore
-creates every table as `<name>__next`, fills it, and only at the end runs
-`DROP TABLE <name>; ALTER TABLE <name>__next RENAME TO <name>` for each table,
-with `meta` (holding the snapshot id) last. Each row is written exactly once,
-readers see either the old or the new data, and schema changes ship with the
-data (there are no separate migrations).
+D1 runs an imported file atomically: the database does not serve queries
+while the import runs, and any failure rolls it back to the previous snapshot.
+`snapshot.sql` therefore simply drops every table and recreates it, with
+`meta` (holding the snapshot id) last. D1 rejects `BEGIN`/`COMMIT` in imported
+files, so the file has none. Schema changes ship with the data (there are no
+separate migrations).
+
+Dropping first matters for the 500 MB database limit. An earlier version built
+`<name>__next` tables beside the live ones and swapped them at the end, so
+every import briefly held two full copies (plus the pages freed by previous
+imports, which SQLite keeps). Once the snapshot passed ~165 MB that no longer
+fit and the import failed in its last step. Writing over the dropped tables
+reuses their pages, so the database stays at about one snapshot.
 
 The Worker includes the snapshot id in every edge-cache key, so a refresh
 simply starts using new cache entries. When a response format changes, bump

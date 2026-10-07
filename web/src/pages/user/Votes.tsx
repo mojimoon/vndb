@@ -18,7 +18,7 @@ export default function UserVotes() {
       vote: (v) => -v.vote,
       rating: (v) => -(v.vn.rating ?? 0),
       diff: (v) => -(v.diff ?? -99),
-      rank: (v) => v.vn.sci_rank,
+      rank: (v) => v.vn.sci_rank ?? Number.MAX_SAFE_INTEGER,
       year: (v) => -(v.vn.released ?? 0),
     };
     return votes.filter((v) => !nq || v.vn.search.includes(nq)).sort((a, b) => key[sort](a) - key[sort](b) || b.vn.votes - a.vn.votes);
@@ -55,7 +55,7 @@ export default function UserVotes() {
               <td className={`tabular hidden px-3 py-2 text-right sm:table-cell ${v.diff === null ? "" : v.diff > 0 ? "text-up" : v.diff < 0 ? "text-down" : "text-ink-2"}`}>
                 {v.diff === null ? "—" : `${v.diff > 0 ? "+" : ""}${v.diff.toFixed(1)}`}
               </td>
-              <td className="tabular px-3 py-2 text-right text-ink-2">#{v.vn.sci_rank}</td>
+              <td className="tabular px-3 py-2 text-right text-ink-2">{v.vn.sci_rank === null ? "—" : `#${v.vn.sci_rank}`}</td>
             </tr>
           ))}
         </tbody>
