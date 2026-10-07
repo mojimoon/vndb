@@ -127,12 +127,12 @@ function View({ x, y, cat }: { x: UserData; y: UserData; cat: Catalogue }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title={t("compare.scatter")}>
           <Scatter
-            points={v.pairs.map((p) => ({ x: mode === "raw" ? p.a : 1 + p.a * 9, y: mode === "raw" ? p.b : 1 + p.b * 9, title: p.vn.title }))}
+            points={v.pairs.map((p) => ({ x: mode === "raw" ? p.a : 1 + p.a * 9, y: mode === "raw" ? p.b : 1 + p.b * 9, title: titles(p.vn, lang).main }))}
+            format={mode === "raw" ? undefined : (x) => pct((x - 1) / 9)}
             xLabel={nx}
             yLabel={ny}
             label={t("compare.scatter")}
           />
-          {mode === "sp" && <p className="mt-1 text-center text-xs text-ink-3">{t("compare.spAxis")}</p>}
         </Card>
         <div className="space-y-4">
           <Card>

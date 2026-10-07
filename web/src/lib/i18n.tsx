@@ -289,6 +289,8 @@ const STRINGS = {
     "compare.noReview": "没有短评",
     "compare.notVoted": "未评分",
     "compare.clickHint": "点击作品可查看两人的短评（💬 表示有短评）。",
+    "chart.titles": "{n} 部作品",
+    "chart.sizeHint": "圆越大，落在同一点的作品越多（最多 {n} 部）。",
   },
   en: {
     "nav.ranking": "Ranking",
@@ -576,6 +578,8 @@ const STRINGS = {
     "compare.noReview": "No review",
     "compare.notVoted": "Not voted",
     "compare.clickHint": "Click a title to read both users' reviews (💬 = has a review).",
+    "chart.titles": "{n} titles",
+    "chart.sizeHint": "Larger circles hold more titles at the same point (up to {n}).",
   },
 } as const;
 

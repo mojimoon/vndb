@@ -507,33 +507,53 @@ export function PairedBars({ x, a, b, names, label }: { x: string[]; a: number[]
   );
 }
 
-/** Scatter of two users' votes on common titles (1-10 on both axes). */
+/** Scatter of two users' votes on common titles (1-10 on both axes). Points with
+ *  exactly the same coordinates merge into one circle whose area grows with the
+ *  number of titles; hovering lists them. */
 export function Scatter({
   points,
   xLabel,
   yLabel,
   label,
+  format = (v) => String(+v.toFixed(2)),
 }: {
   points: { x: number; y: number; title: string }[];
   xLabel: string;
   yLabel: string;
   label: string;
+  format?: (v: number) => string;
 }) {
+  const { t } = useI18n();
   const [hover, setHover] = useState<number | null>(null);
   const S = 320;
-  const pad = 30;
+  const pad = 38;
+  const right = 16;
   const top = 22;
-  const p = (v: number) => pad + ((S - pad - 8) * (v - 1)) / 9;
+  const p = (v: number) => pad + ((S - pad - right) * (v - 1)) / 9;
   const q = (v: number) => S - pad - ((S - pad - top) * (v - 1)) / 9;
-  const h = hover !== null ? points[hover] : null;
-  // Deterministic jitter so identical votes don't hide each other.
-  const jitter = (i: number, k: number) => (((i * 9301 + k * 49297) % 233280) / 233280 - 0.5) * 0.35;
+  const groups = (() => {
+    const m = new Map<string, { x: number; y: number; titles: string[] }>();
+    for (const pt of points) {
+      const k = `${pt.x},${pt.y}`;
+      const g = m.get(k) ?? { x: pt.x, y: pt.y, titles: [] };
+      g.titles.push(pt.title);
+      m.set(k, g);
+    }
+    // Big circles first so small ones stay visible on top.
+    return [...m.values()].sort((a, b) => b.titles.length - a.titles.length);
+  })();
+  const maxN = Math.max(1, ...groups.map((g) => g.titles.length));
+  // Area proportional to the count: 3.5px for one title, up to 14px.
+  const radius = (n: number) => 3.5 + (14 - 3.5) * Math.sqrt((n - 1) / Math.max(1, maxN - 1));
+  const h = hover !== null ? groups[hover] : null;
   return (
     <figure>
-      <div className="mb-1 h-5 truncate text-xs text-ink-2 tabular" aria-live="polite">
+      <div className="mb-1 min-h-5 truncate text-xs text-ink-2 tabular" aria-live="polite" title={h ? h.titles.join(" · ") : undefined}>
         {h && (
           <>
-            <span className="font-medium text-ink">{h.title}</span> · {xLabel} {h.x} · {yLabel} {h.y}
+            {xLabel} {format(h.x)} · {yLabel} {format(h.y)} ·{" "}
+            <span className="font-medium text-ink">{h.titles.length === 1 ? h.titles[0] : t("chart.titles", { n: h.titles.length })}</span>
+            {h.titles.length > 1 && <>: {h.titles.slice(0, 3).join(", ")}{h.titles.length > 3 ? ", …" : ""}</>}
           </>
         )}
       </div>
@@ -541,28 +561,31 @@ export function Scatter({
         {[1, 4, 7, 10].map((v) => (
           <g key={v}>
             <line x1={p(v)} x2={p(v)} y1={top} y2={S - pad} stroke="var(--border)" />
-            <line x1={pad} x2={S - 8} y1={q(v)} y2={q(v)} stroke="var(--border)" />
-            <text x={p(v)} y={S - pad + 14} textAnchor="middle" fontSize={10} fill="var(--text-2)">{v}</text>
-            <text x={pad - 6} y={q(v) + 3} textAnchor="end" fontSize={10} fill="var(--text-2)">{v}</text>
+            <line x1={pad} x2={S - right} y1={q(v)} y2={q(v)} stroke="var(--border)" />
+            <text x={p(v)} y={S - pad + 14} textAnchor="middle" fontSize={10} fill="var(--text-2)">{format(v)}</text>
+            <text x={pad - 6} y={q(v) + 3} textAnchor="end" fontSize={10} fill="var(--text-2)">{format(v)}</text>
           </g>
         ))}
         <line x1={p(1)} y1={q(1)} x2={p(10)} y2={q(10)} stroke="var(--text-3)" strokeDasharray="3 3" />
-        <text x={S - 8} y={S - 4} textAnchor="end" fontSize={10} fill="var(--text-2)">{xLabel} →</text>
+        <text x={S - right} y={S - 4} textAnchor="end" fontSize={10} fill="var(--text-2)">{xLabel} →</text>
         <text x={pad} y={11} fontSize={10} fill="var(--text-2)">↑ {yLabel}</text>
-        {points.map((pt, i) => (
+        {groups.map((g, i) => (
           <circle
-            key={i}
-            cx={p(pt.x + jitter(i, 1))}
-            cy={q(pt.y + jitter(i, 2))}
-            r={hover === i ? 6 : 4}
+            key={`${g.x},${g.y}`}
+            cx={p(g.x)}
+            cy={q(g.y)}
+            r={radius(g.titles.length) + (hover === i ? 1.5 : 0)}
             fill="var(--accent)"
-            fillOpacity={0.7}
+            fillOpacity={hover === i ? 0.95 : 0.7}
             stroke="var(--surface)"
             strokeWidth={1.5}
             onMouseEnter={() => setHover(i)}
           />
         ))}
       </svg>
+      {maxN > 1 && (
+        <p className="mt-1 text-center text-xs text-ink-2">{t("chart.sizeHint", { n: maxN })}</p>
+      )}
     </figure>
   );
 }
