@@ -36,7 +36,8 @@ SCHEMA: dict[str, str] = {
   released     INTEGER,               -- YYYYMMDD (MM/DD may be 99)
   dev_id       INTEGER,
   image        INTEGER,               -- cover id (cv...)
-  image_sexual REAL,                  -- 0 safe .. 2 explicit
+  image_sexual REAL,                  -- 0 safe .. 2 explicit (mean of VNDB users' flags)
+  image_violence REAL,                -- 0 tame .. 2 brutal
   length       INTEGER,
   votes        INTEGER NOT NULL,      -- VNDB vote count
   rating       REAL,                  -- VNDB Bayesian rating, 1-10
@@ -99,7 +100,7 @@ SCHEMA: dict[str, str] = {
 
 VN_COLUMNS = [
     "id", "idx", "title", "latin", "title_ja", "title_zh", "title_en", "olang", "released", "dev_id",
-    "image", "image_sexual", "length", "votes", "rating", "average", "search", "trend",
+    "image", "image_sexual", "image_violence", "length", "votes", "rating", "average", "search", "trend",
     "ranks", "neighbors", "relations", "analysis", "similar", "history",
 ]
 

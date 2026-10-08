@@ -52,7 +52,7 @@ jobs:
           curl -fsSL --retry 3 -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
           mkdir dump
           patterns=('*TIMESTAMP')
-          for t in vn vn_titles vn_relations releases releases_vn releases_producers producers images ulist_vns users; do
+          for t in vn vn_titles vn_relations releases releases_titles releases_vn releases_producers producers images ulist_vns users; do
             patterns+=("*db/$t" "*db/$t.header")
           done
           tar -I zstd -xf db.tar.zst -C dump --wildcards "${patterns[@]}"

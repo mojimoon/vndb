@@ -4,6 +4,7 @@ import { useMeta, type Meta } from "../../lib/api";
 import { langName, methodDesc, useI18n } from "../../lib/i18n";
 import { MethodSelect } from "../../components/MethodSelect";
 import { Status } from "../../components/Status";
+import { SearchBox } from "../../components/SearchBox";
 import { Tabs } from "../../components/Tabs";
 import { normalizeQuery, devName } from "../../lib/format";
 import { ADVANCED_KEYS, FILTER_KEYS, applyFilters, readFilters, useRows, type Filters, type Row } from "./data";
@@ -80,7 +81,7 @@ export default function RankingLayout() {
 
       <section className="space-y-2">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[2fr_1.4fr_1.3fr_auto]">
-          <input type="search" value={filters.q} onChange={(e) => update({ q: e.target.value })} placeholder={t("rank.search")} aria-label={t("rank.search")} className={input} />
+          <SearchBox value={filters.q} onCommit={(q) => update({ q })} placeholder={t("rank.search")} className={input} />
           {rows.state === "ok" ? <DevFilter rows={rows.data} value={filters.dev} onChange={(d) => update({ dev: d ? String(d) : null })} /> : <div />}
           <YearRange from={filters.from} to={filters.to} update={update} input={input} />
           <button

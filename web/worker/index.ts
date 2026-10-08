@@ -199,14 +199,13 @@ app.get("/api/ranks", async (c) => {
 // GET /api/vn/:id -> one VN row (titles of related VNs come from the catalogue). 1 row read.
 app.get("/api/vn/:id{[0-9]+}", (c) =>
   cached(c, async () => {
-    const vn = await c.env.DB.prepare(
-      `SELECT id, idx, title, latin, title_ja, title_zh, title_en, olang, released, dev_id, image, image_sexual,
-              length, votes, rating, average, trend, ranks, neighbors, relations, analysis, similar, history
-         FROM vn WHERE id = ?`,
-    )
+    // SELECT * so a snapshot that adds a column (image_violence, ...) and a
+    // deploy that reads it can land in either order.
+    const vn = await c.env.DB.prepare("SELECT * FROM vn WHERE id = ?")
       .bind(Number(c.req.param("id")))
       .first<Record<string, unknown>>();
     if (!vn) return null;
+    delete vn.search;
     const raw = new Set(["ranks", "neighbors", "relations", "analysis", "similar", "history"]);
     // JSON columns are spliced in verbatim instead of parsed and re-serialized.
     return `{${Object.entries(vn)

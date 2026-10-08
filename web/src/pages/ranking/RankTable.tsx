@@ -219,10 +219,13 @@ export default function RankTable() {
                   {has("delta") && <td className="px-3 py-2.5 text-right text-xs"><Delta d={delta} /></td>}
                   {has("trend") && <td className="hidden px-3 py-2.5 text-right text-xs sm:table-cell">{r.trend === null ? <span className="text-ink-3">–</span> : <Delta d={r.trend} />}</td>}
                   <td className="px-3 py-2.5">
-                    <Link to={`/vn/${r.id}`} className="font-medium text-ink hover:text-accent-ink">
-                      {main}
-                    </Link>
-                    {sub && <div className="mt-0.5 truncate text-xs text-ink-3">{sub}</div>}
+                    {/* Long titles wrap within ~24rem instead of stretching the table. */}
+                    <div className="w-max min-w-40 max-w-[16rem] break-words sm:max-w-sm">
+                      <Link to={`/vn/${r.id}`} className="font-medium text-ink hover:text-accent-ink">
+                        {main}
+                      </Link>
+                      {sub && <div className="mt-0.5 text-xs text-ink-3">{sub}</div>}
+                    </div>
                   </td>
                   {has("dev") && (
                     <td className="hidden max-w-48 px-3 py-2.5 text-ink-2 md:table-cell">
