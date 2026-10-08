@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 _SEARCH_DROP = re.compile("[^0-9a-z\u3040-\u30fa\u30fc-\u30ff\u3400-\u9fff\uac00-\ud7af]+")
 _HAN = re.compile("[\u3400-\u9fff]")
 _KANA = re.compile("[\u3040-\u30ff]")
+_CJK = re.compile("[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
 
 
 def normalize_search(*parts: str | None) -> str:
@@ -81,17 +82,19 @@ def load_catalogue(dump: Dump, cfg: Config) -> Catalogue:
     ]
     keep = [
         "id", "title", "latin", "title_ja", "title_zh", "title_en", "olang", "released",
-        "dev_id", "image", "image_sexual", "length", "votes", "rating", "average", "search",
+        "dev_id", "image", "image_sexual", "image_violence", "length", "votes", "rating", "average", "search",
     ]
     return Catalogue(vn=vn[keep].copy(), producers=producers, relations=relations)
 
 
 def _attach_titles(dump: Dump, vn: pd.DataFrame) -> None:
-    t = dump.read("vn_titles", ["id", "lang", "title", "latin"])
+    t = dump.read("vn_titles", dump.optional_columns("vn_titles", ["id", "lang", "official", "title", "latin"]))
     t["id"] = strip_id(t["id"]).astype(int)
     t = t[t["id"].isin(vn["id"])]
     t["title"] = t["title"].map(unescape)
     t["latin"] = t["latin"].map(unescape)
+    if "official" in t:  # official titles win over unofficial translations of the same language
+        t = t.sort_values("official", ascending=False, kind="stable")
     by_lang = {lang: g.drop_duplicates("id").set_index("id") for lang, g in t.groupby("lang")}
 
     def pick(lang: str, col: str = "title") -> pd.Series:
@@ -106,17 +109,15 @@ def _attach_titles(dump: Dump, vn: pd.DataFrame) -> None:
     vn["title_zh"] = pick("zh-Hans").fillna(pick("zh-Hant")).fillna(pick("zh"))
     vn["all_titles"] = vn["id"].map(t.groupby("id")["title"].agg(lambda s: "\n".join(x for x in s if x)))
 
-    # No official Chinese title: fall back to a Chinese-looking alias (Han but no kana).
-    def zh_alias(alias):
-        if not isinstance(alias, str):
-            return None
-        for a in alias.split("\n"):
-            if _HAN.search(a) and not _KANA.search(a):
-                return a.strip()
-        return None
-
+    # No Chinese title on VNDB: try an official Chinese release, then aliases.
     missing = vn["title_zh"].isna()
-    vn.loc[missing, "title_zh"] = vn.loc[missing, "alias"].map(zh_alias)
+    rel_title, rel_text = _chinese_release_titles(dump, set(vn.loc[missing, "id"]))
+    vn.loc[missing, "title_zh"] = [rel_title.get(int(i)) for i in vn.loc[missing, "id"]]
+    missing = vn["title_zh"].isna()
+    vn.loc[missing, "title_zh"] = [
+        chinese_alias(a, o, rel_text.get(i, ""))
+        for i, a, o in zip(vn.loc[missing, "id"], vn.loc[missing, "alias"], vn.loc[missing, "title"])
+    ]
 
     # Every VN must have a display title.
     fallback = vn["title_en"].fillna(vn["title_ja"]).fillna(vn["id"].map(lambda i: f"v{i}"))
@@ -124,14 +125,94 @@ def _attach_titles(dump: Dump, vn: pd.DataFrame) -> None:
     vn["latin"] = vn["latin"].where(vn["latin"] != vn["title"])
 
 
+ZH_LANGS = ["zh-Hans", "zh-Hant", "zh"]
+
+
+def chinese_alias(alias: str | None, original: str | None, release_text: str = "") -> str | None:
+    """A Chinese name from VNDB's free-form aliases, or None if it isn't trustworthy.
+
+    Aliases with Han characters and no kana count as Chinese. If the original
+    title is in kana / hangul, Chinese readers can't read it, so the first such
+    alias is better than nothing. If it is in Latin script (Rewrite, Fate/stay
+    night) the original is readable and often what Chinese players use, so an
+    alias is only used when it is the only Chinese one or a Chinese release title
+    contains it (Rewrite's 罚抄 / 改写 are a joke and a literal translation)."""
+    if not isinstance(alias, str):
+        return None
+    cands = [a.strip() for a in alias.split("\n") if _HAN.search(a) and not _KANA.search(a)]
+    cands = list(dict.fromkeys(c for c in cands if len(c) >= 2))
+    if not cands:
+        return None
+    if isinstance(original, str) and _CJK.search(original):
+        return cands[0]
+    if len(cands) == 1:
+        return cands[0]
+    confirmed = [c for c in cands if c in release_text]
+    return confirmed[0] if confirmed else None
+
+
+# Edition / format suffixes on Chinese release titles ("下載版", "(中文版)", ...).
+_RELEASE_SUFFIX = re.compile(
+    r"\s*([（(][^（()）]*[)）]"                      # (中文版)
+    r"|[-－~～]?\s*(下[载載]|通常|中文|限定|初回限定|豪[华華]|完全|普通|特典|中文特典|DL|体验|體驗|試玩|试玩)版"
+    r"|[vV]?\d+(\.\d+)+"                              # 0.62, v1.2
+    r"|[-－]\s*第.{1,8}[章集话話卷部]+.*)\s*$"           # - 第一章第四集
+)
+
+
+def clean_release_title(title: str) -> str | None:
+    """A usable Chinese name from a release title: Han characters, no Latin
+    letters (mixed product names like "Fate/Extella 下載版"), edition suffixes off."""
+    t = title.strip()
+    for _ in range(3):
+        t = _RELEASE_SUFFIX.sub("", t).strip()
+    if not _HAN.search(t) or re.search("[A-Za-z]", t) or len(t) < 2:
+        return None
+    return t
+
+
+def _chinese_release_titles(dump: Dump, ids: set[int]) -> tuple[dict[int, str], dict[int, str]]:
+    """Chinese titles from releases of a single VN.
+
+    Returns (title from an official, non-patch, human-translated Chinese release,
+    all Chinese release titles joined) per VN. Of several official titles the one
+    most others start with wins, so "Rewrite" beats "Rewrite 体验版"."""
+    if not ids or not dump.has("releases_titles"):
+        return {}, {}
+    rv = dump.read("releases_vn", ["id", "vid"])
+    rv["vid"] = strip_id(rv["vid"]).astype(int)
+    rv = rv[rv["vid"].isin(ids)]
+    per_release = rv.groupby("id")["vid"].nunique()
+    rv = rv[rv["id"].isin(per_release[per_release == 1].index)]  # bundles have no single title
+    rt = dump.read("releases_titles", dump.optional_columns("releases_titles", ["id", "lang", "mtl", "title"]))
+    rt = rt[rt["lang"].isin(ZH_LANGS) & rt["title"].notna() & rt["id"].isin(set(rv["id"]))].copy()
+    rt["title"] = rt["title"].map(unescape).str.strip()
+    rt = rt.merge(rv, on="id")
+    text = rt.groupby("vid")["title"].agg(" ".join).to_dict()
+    rel = dump.read("releases", dump.optional_columns("releases", ["id", "official", "patch"]))
+    ok = pd.Series(True, index=rel.index)
+    if "official" in rel:
+        ok &= rel["official"] == "t"
+    if "patch" in rel:
+        ok &= rel["patch"] != "t"
+    good = rt[rt["id"].isin(set(rel.loc[ok, "id"])) & (rt["mtl"] != "t" if "mtl" in rt else True)]
+    titles: dict[int, str] = {}
+    for vid, g in good.groupby("vid"):
+        ts = [c for x in g["title"] if (c := clean_release_title(x))]
+        if ts:
+            titles[int(vid)] = max(dict.fromkeys(ts), key=lambda c: (sum(x.startswith(c) for x in ts), -len(c)))
+    return titles, text
+
+
 def _attach_images(dump: Dump, vn: pd.DataFrame) -> None:
     vn["image_sexual"] = np.nan
+    vn["image_violence"] = np.nan
     if "image" not in vn:
         vn["image"] = None
         return
     vn["image"] = strip_id(vn["image"])
     if dump.has("images") and "c_sexual_avg" in dump.header("images"):
-        img = dump.read("images", ["id", "c_sexual_avg"])
+        img = dump.read("images", dump.optional_columns("images", ["id", "c_sexual_avg", "c_violence_avg"]))
         img = img[img["id"].str.startswith("cv", na=False)]
         img["id"] = strip_id(img["id"])
         sexual = pd.to_numeric(img["c_sexual_avg"], errors="coerce")
@@ -139,6 +220,11 @@ def _attach_images(dump: Dump, vn: pd.DataFrame) -> None:
         if sexual.max() > 2:
             sexual = sexual / 100
         vn["image_sexual"] = vn["image"].map(pd.Series(sexual.to_numpy(), index=img["id"].to_numpy()))
+        if "c_violence_avg" in img:
+            violence = pd.to_numeric(img["c_violence_avg"], errors="coerce")
+            if violence.max() > 2:
+                violence = violence / 100
+            vn["image_violence"] = vn["image"].map(pd.Series(violence.to_numpy(), index=img["id"].to_numpy()))
 
 
 def _attach_releases(dump: Dump, vn: pd.DataFrame, ids: set[int]) -> pd.DataFrame:

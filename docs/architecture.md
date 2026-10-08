@@ -100,6 +100,35 @@ and filters (list labels, the author's vote count) a VN's reviews before
 paging, so every query costs the same shard read and is cached on its own.
 Pass `--skip-notes` to the pipeline to leave them out.
 
+### Chinese titles
+
+VNDB has a Chinese title for only about a quarter of the ranked titles. For
+the rest `title_zh` is filled in this order (`extract._attach_titles`):
+
+1. VNDB's own Chinese titles (`vn_titles`, official ones first; zh-Hans, then
+   zh-Hant, then zh).
+2. The title of an official, non-patch, human-translated Chinese release of
+   that title alone (`releases_titles`), with edition, version and episode
+   suffixes stripped and titles mixing in Latin letters skipped. Of several,
+   the one most others start with wins ("花冠之淚", "機械學報告").
+3. A Chinese alias (Han characters, no kana). If the original title is in kana
+   or hangul any such alias beats nothing, so the first is used. If it is in
+   Latin script the original is readable and often what Chinese players use,
+   so an alias is used only when it is the only Chinese one (Fate/stay night →
+   命运之夜) or a Chinese release title contains it. Rewrite's two aliases
+   (罚抄, a joke, and 改写, a literal translation) are therefore ignored.
+4. Otherwise none: the UI shows the Japanese or original title.
+
+There is no perfect rule: a Latin-script title with several Chinese aliases
+(FORTUNE ARTERIAL: 命运动脉 / 赤之约定) keeps its original title.
+
+### Cover images
+
+`image_sexual` / `image_violence` are the means of VNDB users' flags (0 safe /
+tame, 1 suggestive / violent, 2 explicit / brutal); the level is the rounded
+mean. Covers at level 1 (and unflagged ones) are blurred until clicked; covers
+at level 2 are never loaded, a placeholder links to VNDB instead.
+
 ### Voter filters
 
 The ratings tab can recompute a VN's analysis over a subset of its voters

@@ -65,7 +65,8 @@ const STRINGS = {
     "vn.h2h.row": "{w} 胜 · {t} 平 · {l} 负（共 {n} 人）",
     "vn.relations": "关联作品",
     "vn.showCover": "显示封面",
-    "vn.nsfwCover": "封面可能含有成人内容",
+    "vn.nsfwCover": "封面可能含有性暗示或暴力内容",
+    "vn.blockedCover": "封面含有露骨或血腥内容，本站不显示",
     "vn.unranked": "未排名",
     "methods.title": "排名方法",
     "methods.params": "参数",
@@ -291,6 +292,8 @@ const STRINGS = {
     "compare.clickHint": "点击作品可查看两人的短评（💬 表示有短评）。",
     "chart.titles": "{n} 部作品",
     "chart.sizeHint": "圆越大，落在同一点的作品越多（最多 {n} 部）。",
+    "nav.menu": "菜单",
+    "nav.vndbHint": "在 VNDB 打开当前页面对应的条目",
   },
   en: {
     "nav.ranking": "Ranking",
@@ -354,7 +357,8 @@ const STRINGS = {
     "vn.h2h.row": "{w} wins · {t} ties · {l} losses (of {n})",
     "vn.relations": "Related",
     "vn.showCover": "Show cover",
-    "vn.nsfwCover": "Cover may contain adult content",
+    "vn.nsfwCover": "Cover may be suggestive or violent",
+    "vn.blockedCover": "Cover is explicit or brutal and is not shown here",
     "vn.unranked": "unranked",
     "methods.title": "Ranking methods",
     "methods.params": "Parameters",
@@ -580,6 +584,8 @@ const STRINGS = {
     "compare.clickHint": "Click a title to read both users' reviews (💬 = has a review).",
     "chart.titles": "{n} titles",
     "chart.sizeHint": "Larger circles hold more titles at the same point (up to {n}).",
+    "nav.menu": "Menu",
+    "nav.vndbHint": "Open the matching page on VNDB",
   },
 } as const;
 

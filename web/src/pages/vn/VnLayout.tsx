@@ -56,7 +56,7 @@ function Header({ vn, item }: { vn: VnDetail; item?: CatalogueItem }) {
   ];
   return (
     <header className="flex flex-col gap-5 sm:flex-row">
-      {vn.image && <Cover id={vn.image} sexual={vn.image_sexual} alt={main} />}
+      {vn.image && <Cover id={vn.image} sexual={vn.image_sexual} violence={vn.image_violence} alt={main} vnId={vn.id} />}
       <div className="min-w-0 flex-1">
         <h1 className="text-2xl font-semibold tracking-tight">{main}</h1>
         {sub && <p className="mt-1 text-ink-2">{sub}</p>}
@@ -81,13 +81,33 @@ function Header({ vn, item }: { vn: VnDetail; item?: CatalogueItem }) {
   );
 }
 
-function Cover({ id, sexual, alt }: { id: number; sexual: number | null; alt: string }) {
+/** VNDB flags each image by averaging users' votes (sexual: 0 safe, 1 suggestive,
+ *  2 explicit; violence: 0 tame, 1 violent, 2 brutal); the level is the rounded mean. */
+export function coverLevel(sexual: number | null | undefined, violence: number | null | undefined): "safe" | "blur" | "block" {
+  const s = sexual ?? null;
+  const v = violence ?? 0;
+  if ((s ?? 0) >= 1.5 || v >= 1.5) return "block";
+  if (s === null || s >= 0.5 || v >= 0.5) return "blur"; // unflagged covers stay hidden until asked
+  return "safe";
+}
+
+function Cover({ id, sexual, violence, alt, vnId }: { id: number; sexual: number | null; violence: number | null | undefined; alt: string; vnId: number }) {
   const { t } = useI18n();
-  // Blur anything flagged as more than mildly suggestive (or unflagged) until asked.
-  const risky = sexual === null || sexual >= 0.5;
-  const [show, setShow] = useState(!risky);
+  const level = coverLevel(sexual, violence);
+  const [show, setShow] = useState(level === "safe");
+  const box = "relative aspect-[2/3] w-36 shrink-0 self-start overflow-hidden rounded-lg border border-line bg-surface-2 sm:w-40";
+  if (level === "block")
+    // Not even requested: explicit / brutal covers never load on this site.
+    return (
+      <div className={`${box} flex flex-col items-center justify-center gap-2 p-3 text-center text-xs text-ink-2`}>
+        <span>{t("vn.blockedCover")}</span>
+        <a href={`https://vndb.org/v${vnId}`} target="_blank" rel="noreferrer" className="text-accent-ink hover:underline">
+          VNDB ↗
+        </a>
+      </div>
+    );
   return (
-    <div className="relative aspect-[2/3] w-36 shrink-0 self-start overflow-hidden rounded-lg border border-line bg-surface-2 sm:w-40">
+    <div className={box}>
       <img src={coverUrl(id)} alt={alt} loading="lazy" referrerPolicy="no-referrer" className={`h-full w-full object-cover ${show ? "" : "scale-110 blur-xl"}`} />
       {!show && (
         <button type="button" onClick={() => setShow(true)} className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-bg/40 p-2 text-center text-xs text-ink">

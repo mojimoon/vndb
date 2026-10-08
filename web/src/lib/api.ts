@@ -60,6 +60,8 @@ export interface VnDetail extends TitleFields {
   dev_id: number | null;
   image: number | null;
   image_sexual: number | null;
+  /** 0 tame .. 2 brutal; missing in snapshots before it was exported. */
+  image_violence?: number | null;
   length: number | null;
   votes: number;
   rating: number | null;

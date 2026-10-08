@@ -122,6 +122,23 @@ def test_neighbors_union_contains_each_category_top():
         assert sorted(r[3] for r in lst)[-3:] == sorted(mine)[-3:]
 
 
+def test_chinese_titles():
+    from vndb_rank.extract import chinese_alias, clean_release_title
+    # Latin-script original: aliases only if unambiguous or confirmed by a release.
+    assert chinese_alias("リライト\nRiraito\n罚抄\n改写", "Rewrite") is None
+    assert chinese_alias("リライト\n罚抄\n改写", "Rewrite", "改写 体验版") == "改写"
+    assert chinese_alias("fsn\nフェイト／ステイナイト\n命运之夜", "Fate/stay night") == "命运之夜"
+    # Kana original: the first Chinese alias is better than nothing.
+    assert chinese_alias("dc\n初音岛\n初音島", "D.C.～ダ・カーポ～") == "初音岛"
+    assert chinese_alias("なつくる\nNatsukuru", "なつくもゆるる") is None
+    assert clean_release_title("花冠之淚") == "花冠之淚"
+    assert clean_release_title("心靈判官: 無法抉擇的幸福 (中文版)") == "心靈判官: 無法抉擇的幸福"
+    assert clean_release_title("网球王牌 0.62") == "网球王牌"
+    assert clean_release_title("我的爱人是霸凌女 - 第一章第四集") == "我的爱人是霸凌女"
+    assert clean_release_title("Fate/Extella 下載版") is None  # mixed product names are skipped
+    assert clean_release_title("Rewrite") is None
+
+
 def test_helpers():
     assert normalize_search("Steins;Gate", "シュタインズ・ゲート", None, float("nan")) == "steinsgate シュタインズゲート"
     assert to_ten_scale(pd.Series(["850", "\\N", "100"])).round(2).tolist()[::2] == [8.5, 1.0]
