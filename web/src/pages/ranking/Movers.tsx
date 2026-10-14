@@ -36,23 +36,39 @@ export default function Movers() {
 }
 
 function MoverList({ title, rows }: { title: string; rows: Row[] }) {
-  const list = (items: Row[]) => (
-      <ul>
-        {items.map((r) => (
-          <li key={r.id} className="flex items-baseline gap-3 border-t border-line px-3 py-1.5 text-sm first:border-0">
-            <span className="w-14 shrink-0 text-right text-xs">
-              <Delta d={r.trend!} />
-            </span>
-            <VnLink vn={r} released={r.released} truncate />
-          </li>
-        ))}
-      </ul>
+  const { t } = useI18n();
+  const table = (items: Row[]) => (
+      <table className="w-full text-sm">
+        <thead className="text-left text-xs text-ink-2">
+          <tr>
+            <th className="w-14 px-3 py-1.5 text-right font-medium">{t("rank.col.before")}</th>
+            <th className="w-14 px-3 py-1.5 text-right font-medium">{t("rank.col.today")}</th>
+            <th className="w-16 px-3 py-1.5 text-right font-medium">{t("rank.col.trend")}</th>
+            <th className="px-3 py-1.5 font-medium">{t("rank.col.title")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((r) => {
+            const now = r.sci_rank ?? r.rank; // trend follows the default method
+            return (
+              <tr key={r.id} className="border-t border-line">
+                <td className="tabular px-3 py-1.5 text-right text-ink-2">{now + r.trend!}</td>
+                <td className="tabular px-3 py-1.5 text-right font-semibold">{now}</td>
+                <td className="px-3 py-1.5 text-right text-xs"><Delta d={r.trend!} /></td>
+                <td className="px-3 py-1.5">
+                  <VnLink vn={r} released={r.released} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
   );
-  const [visible, more] = useShowMore(rows, 20, title, list);
+  const [visible, more] = useShowMore(rows, 20, title, table);
   return (
     <section className="rounded-lg border border-line bg-surface">
       <h2 className="border-b border-line px-4 py-2.5 text-sm font-semibold">{title}</h2>
-      {list(visible)}
+      {table(visible)}
       <div className="pb-2">{more}</div>
     </section>
   );

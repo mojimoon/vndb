@@ -3,6 +3,7 @@ import { useI18n } from "../../lib/i18n";
 import { VnLink } from "../../components/VnLink";
 import { useShowMore } from "../../components/ShowMore";
 import { useRanking } from "./RankingLayout";
+import { Delta } from "./RankTable";
 import type { Row } from "./data";
 
 const TOP = 500; // underrated: within the current method's top 500
@@ -35,6 +36,7 @@ function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
           <tr>
             <th className="w-14 px-3 py-1.5 text-right font-medium">{t("rank.col.rank")}</th>
             <th className="w-14 px-3 py-1.5 text-right font-medium">VNDB</th>
+            <th className="w-16 px-3 py-1.5 text-right font-medium">{t("rank.col.delta")}</th>
             <th className="px-3 py-1.5 font-medium">{t("rank.col.title")}</th>
           </tr>
         </thead>
@@ -43,6 +45,7 @@ function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
             <tr key={r.id} className="border-t border-line">
               <td className="tabular px-3 py-1.5 text-right font-semibold">{r.rank}</td>
               <td className="tabular px-3 py-1.5 text-right text-ink-2">{r.vndb_rank}</td>
+              <td className="px-3 py-1.5 text-right text-xs"><Delta d={r.vndb_rank - r.rank} /></td>
               <td className="px-3 py-1.5">
                 <VnLink vn={r} released={r.released} />
               </td>
