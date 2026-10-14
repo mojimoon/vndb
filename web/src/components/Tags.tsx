@@ -42,9 +42,9 @@ export function TagAnalysis({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" |
   );
 }
 
-/** Colour for a significance: grey up to 1.5, then teal -> blue -> violet at 3 (tokens --sig-0..3 in index.css). */
+/** Colour for a significance: grey up to 1, then teal -> blue -> violet at 3 (tokens --sig-0..3 in index.css). */
 export const sigColor = (sig: number) => {
-  const x = Math.max(0, Math.min(3, (sig - 1.5) * 2));
+  const x = Math.max(0, Math.min(3, (sig - 1) * 1.5));
   const i = Math.min(2, Math.floor(x));
   return `color-mix(in oklab, var(--sig-${i + 1}) ${Math.round((x - i) * 100)}%, var(--sig-${i}))`;
 };
