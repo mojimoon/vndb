@@ -95,6 +95,14 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
     ranks = rank_table(scores)
     ranks["vndb"] = rank_table(pd.DataFrame({"v": vndb_order.to_numpy()}))["v"].to_numpy()
 
+    # Statistics listed with the methods (own ranking docs) but not part of
+    # vn.ranks: mean sample percentile and mean (vote - voter's own mean).
+    stat = pd.DataFrame({
+        "stat_sp": [a["sp"]["mean"] if a["sp"] else np.nan for a in analysis],
+        "stat_bias": [a["bias"] if a["bias"] is not None else np.nan for a in analysis],
+    })
+    stat_ranks = rank_table(stat)
+
     neighbors = build_neighbors(pairs, ids, cfg.neighbors_per_category)
     methods = list(scores.columns)
     featured = [m for m in FEATURED if m in methods]
@@ -174,7 +182,7 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "pipeline_version": __version__,
             "config": cfg.as_dict(),
-            "methods": methods,
+            "methods": methods + list(stat.columns),
             "featured": featured,
             "default_method": default,
             "history_methods": [default, "vndb"],
@@ -215,10 +223,10 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
             extra["trend"][i], int(vndb_rank[i]), int(sci_rank[i]), r.search,
         ])
     docs = {"catalogue": compact_json({"columns": cat_cols, "rows": cat_rows})}
-    for m in methods:
-        order = np.lexsort((ids, ranks[m].to_numpy()))
-        sc = scores[m].to_numpy(dtype=np.float64)
-        docs[f"ranks:{m}"] = compact_json({"method": m, "ranks": [[int(ids[j]), int(ranks[m].iloc[j]), _num(sc[j])] for j in order]})
+    for m, s_col, r_col in [*((m, scores[m], ranks[m]) for m in methods), *((m, stat[m], stat_ranks[m]) for m in stat.columns)]:
+        order = np.lexsort((ids, r_col.to_numpy()))
+        sc = s_col.to_numpy(dtype=np.float64)
+        docs[f"ranks:{m}"] = compact_json({"method": m, "ranks": [[int(ids[j]), int(r_col.iloc[j]), _num(sc[j])] for j in order]})
     if tags is not None:
         docs["tags"] = compact_json(tags_doc(tags, vote_idf(tags, ids, votes_per_vn)))
         docs["vntags"] = vn_tags_blob(tags, ids)

@@ -81,6 +81,7 @@ const STRINGS = {
     "methods.group.po": "偏序网络 (PONet)",
     "methods.group.rankit": "科学排名 (rankit)",
     "methods.group.ref": "参考",
+    "methods.group.stat": "统计",
     "methods.rankitHint": "把每对作品视作一场比赛：行是求解方法，列是用作「比分」的量。点击查看对应排名。",
     "stats.title": "统计",
     "stats.ranked": "进入排名的作品",
@@ -442,6 +443,7 @@ const STRINGS = {
     "methods.group.po": "Partial order network (PONet)",
     "methods.group.rankit": "Scientific ranking (rankit)",
     "methods.group.ref": "Reference",
+    "methods.group.stat": "Statistics",
     "methods.rankitHint": "Each pair of titles is a game: rows are the rating system, columns the quantity used as the game score. Click a cell to open that ranking.",
     "stats.title": "Statistics",
     "stats.ranked": "Ranked titles",
@@ -803,6 +805,7 @@ const STRINGS = {
     "methods.group.po": "半順序ネットワーク (PONet)",
     "methods.group.rankit": "科学的ランキング (rankit)",
     "methods.group.ref": "参考",
+    "methods.group.stat": "統計",
     "methods.rankitHint": "作品の各ペアを 1 試合とみなします。行は解法、列は「スコア」として使う量です。クリックでそのランキングを開きます。",
     "stats.title": "統計",
     "stats.ranked": "ランキング対象作品",
@@ -1180,15 +1183,36 @@ const MERGED: Record<string, { name: Text; desc: Text }> = {
   },
 };
 
+/** Per-title statistics offered as rankings on the main page (not shown among a title's ranks). */
+const STATS: Record<string, { name: Text; desc: Text }> = {
+  stat_sp: {
+    name: { zh: "在评分者心中的位置", en: "Where voters place it", ja: "投票者の中での位置" },
+    desc: {
+      zh: "评分者给它的评分在各自全部评分中的样本百分位的平均值：越高，说明越多评分者把它当作自己的最爱之一。不是排名方法，仅供参考。",
+      en: "Mean sample percentile of its votes within each voter's own list: the higher, the more voters count it among their favourites. A statistic, not a ranking method.",
+      ja: "各投票者の全投票の中でのこの作品への得点の標本パーセンタイルの平均。高いほど、多くの投票者がお気に入りの一つとみなしています。ランキング手法ではなく参考用の統計です。",
+    },
+  },
+  stat_bias: {
+    name: { zh: "评分者偏好", en: "Voter preference", ja: "投票者の好み" },
+    desc: {
+      zh: "评分减去该评分者自己的平均分后的平均值：为正说明评分者给它的分数高于他们平时的打分。不是排名方法，仅供参考。",
+      en: "Mean of (vote − that voter's own mean vote): positive means voters rate it above their usual scores. A statistic, not a ranking method.",
+      ja: "得点からその投票者自身の平均点を引いた値の平均。正の値は、投票者が普段より高い点を付けていることを表します。ランキング手法ではなく参考用の統計です。",
+    },
+  },
+};
+
 export const RANKER_CODES = Object.keys(RANKERS);
 export const VARIABLE_CODES = Object.keys(VARIABLES);
 export const rankerName = (code: string, lang: Lang) => RANKERS[code]?.[lang] ?? code;
 export const variableName = (code: string, lang: Lang) => VARIABLES[code]?.[lang] ?? code;
 
-export type MethodGroup = "merged" | "po" | "rankit" | "ref";
+export type MethodGroup = "merged" | "po" | "rankit" | "ref" | "stat";
 
 export function methodGroup(code: string): MethodGroup {
   if (code === "vndb") return "ref";
+  if (code.startsWith("stat_")) return "stat";
   if (code.startsWith("borda_")) return "merged";
   if (code.startsWith("po_")) return "po";
   return "rankit";
@@ -1204,6 +1228,7 @@ function splitRankit(code: string): [string, string] | null {
 export function methodName(code: string, lang: Lang): string {
   if (code === "vndb") return translate(lang, "method.vndb");
   if (MERGED[code]) return MERGED[code].name[lang];
+  if (STATS[code]) return STATS[code].name[lang];
   if (code.startsWith("borda_")) {
     const v = VARIABLES[code.slice(6)];
     return v ? translate(lang, "method.borda", { v: v[lang] }) : code;
@@ -1217,6 +1242,7 @@ export function methodName(code: string, lang: Lang): string {
 export function methodDesc(code: string, lang: Lang): string | null {
   if (code === "vndb") return translate(lang, "method.vndbDesc");
   if (MERGED[code]) return MERGED[code].desc[lang];
+  if (STATS[code]) return STATS[code].desc[lang];
   if (PO[code]) return PO[code].desc[lang];
   if (code.startsWith("borda_")) {
     const v = VARIABLES[code.slice(6)];
@@ -1240,6 +1266,8 @@ const SHORT: Record<string, Text> = {
   po_entropy: { zh: "熵加权", en: "Entropy", ja: "エントロピー" },
   po_bt: { zh: "BT", en: "BT", ja: "BT" },
   vndb: { zh: "VNDB", en: "VNDB", ja: "VNDB" },
+  stat_sp: { zh: "位置", en: "Placement", ja: "位置" },
+  stat_bias: { zh: "偏好", en: "Preference", ja: "好み" },
 };
 const RANKER_SHORT: Record<string, string> = {
   massey: "Massey",

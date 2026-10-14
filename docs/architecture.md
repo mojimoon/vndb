@@ -69,6 +69,12 @@ grand ranking. 41 methods remain. The grand ranking (`borda_grand`) is a Borda
 count over 9 of them; see [ranking-experiments.md](ranking-experiments.md)
 for the full history of methods and the experiments behind the grand ranking.
 
+Two per-title statistics, `stat_sp` (mean sample percentile of the votes) and
+`stat_bias` (mean of vote − the voter's own mean), are listed in
+`info.methods` and get `ranks:<code>` docs so the ranking page can sort by
+them, but they are not ranking methods: they stay out of `vn.ranks` and the
+Kendall matrix, and the frontend groups them under "Statistics".
+
 ## Schema (defined in `pipeline/vndb_rank/export.py`)
 
 Numbers from the 2026-10-06 dump:

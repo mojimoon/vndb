@@ -324,13 +324,17 @@ def test_prebuilt_docs(snapshot):
     assert row["idx"] == 0 and row["title"] and "search" in row
     info = json.loads(db.execute("SELECT value FROM meta WHERE key='info'").fetchone()[0])
     removed = {"po_rw", "massey_prob", "keener_prob", "markov_rv_sp_geo", "difference_ari", "difference_prob"}
-    assert not removed & set(info["methods"]) and len(info["methods"]) == 42  # 41 methods + vndb
+    assert not removed & set(info["methods"]) and len(info["methods"]) == 44  # 41 methods + vndb + 2 statistics
     assert {"difference_sp_ari", "difference_sp_geo"} <= set(info["methods"])
     for m in ["borda_grand", "vndb"]:
         r = _doc(db, f"ranks:{m}")
         assert r["method"] == m and [x[1] for x in r["ranks"]] == sorted(x[1] for x in r["ranks"])
         sql = dict(db.execute(f"SELECT id, json_extract(ranks, '$.{m}[0]') FROM vn"))
         assert all(sql[i] == rank for i, rank, _ in r["ranks"])
+    # Statistics have ranking docs but stay out of vn.ranks.
+    for m in ["stat_sp", "stat_bias"]:
+        assert m in info["methods"] and _doc(db, f"ranks:{m}")["ranks"]
+        assert db.execute(f"SELECT count(*) FROM vn WHERE json_extract(ranks, '$.{m}') IS NOT NULL").fetchone()[0] == 0
 
 
 def test_voter_shards_give_exact_joint_counts(snapshot):

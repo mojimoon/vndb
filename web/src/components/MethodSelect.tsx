@@ -1,6 +1,6 @@
 import { methodGroup, methodName, useI18n, type MethodGroup } from "../lib/i18n";
 
-const GROUP_ORDER: MethodGroup[] = ["merged", "po", "rankit", "ref"];
+const GROUP_ORDER: MethodGroup[] = ["merged", "po", "rankit", "ref", "stat"];
 
 
 export function MethodSelect({

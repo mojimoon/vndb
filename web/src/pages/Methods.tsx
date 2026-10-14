@@ -25,7 +25,7 @@ const INTRO: Record<Lang, string[]> = {
   ],
 };
 
-const GROUPS: MethodGroup[] = ["merged", "po", "rankit", "ref"];
+const GROUPS: MethodGroup[] = ["merged", "po", "rankit", "ref", "stat"];
 
 export default function Methods() {
   const meta = useMeta();
