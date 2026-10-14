@@ -262,8 +262,11 @@ export default function RankTable() {
                           <Link to={`/dev/${r.dev_id}`} className="truncate hover:text-accent-ink hover:underline">
                             {dev}
                           </Link>
-                          <button type="button" onClick={() => update({ dev: String(r.dev_id) })} className="shrink-0 text-xs text-ink-3 hover:text-ink" title={t("rank.filterDev")} aria-label={t("rank.filterDev")}>
-                            ⧩
+                          <button type="button" onClick={() => update({ dev: String(r.dev_id) })} className="shrink-0 self-center text-ink-3 hover:text-ink" title={t("rank.filterDev")} aria-label={t("rank.filterDev")}>
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden>
+                              <circle cx="11" cy="11" r="7" />
+                              <path d="m20 20-4-4" />
+                            </svg>
                           </button>
                         </span>
                       ) : (

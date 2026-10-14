@@ -20,7 +20,7 @@ from .analysis import build_analysis, per_user_means, per_user_percentiles, user
 from .cf import CFConfig, build_users, similar_items
 from .export import PRODUCER_COLUMNS, VN_COLUMNS, _num, compact_json, rank_table, ranks_json, vn_rows, write_sql
 from .extract import load_catalogue, load_users, load_votes
-from .methods import compute_all
+from .methods import GRAND_INPUTS, compute_all
 from .neighbors import build_neighbors
 from .pairs import build_pairs
 from .leaderboards import build_leaderboards
@@ -32,10 +32,7 @@ from .storage import (
 log = logging.getLogger("vndb_rank")
 
 # Shown first in the UI and used for the method-agreement matrix.
-FEATURED = [
-    "borda_grand", "borda_sci", "borda_po", "po_percent", "po_simple", "po_weighted",
-    "po_bt", "po_elo", "po_entropy", "colley_prob", "od_sp_ari", "markov_rdv_sp_geo", "vndb",
-]
+FEATURED = ["borda_grand", "borda_sci", "borda_po", "vndb", *GRAND_INPUTS]
 
 
 def kendall_matrix(scores: pd.DataFrame, methods: list[str]) -> dict:
