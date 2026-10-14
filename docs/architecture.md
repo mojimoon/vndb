@@ -149,10 +149,16 @@ Only searchable tags are kept. Names are shown as on VNDB (never translated).
   little. Storing per-user tag profiles instead would have cost ~90 MB for
   56k users.
 
-The cloud shows the top 35 (20 on phones) content tags without spoilers, sized by
-score and coloured by significance (grey 0 -> teal -> blue -> violet 3); the
-table defaults to VNDB's view (content + technical, no spoilers) and marks
-spoilers like VNDB: a small yellow "s" (minor) or a red "S" (major).
+The cloud shows the top 35 (20 on phones) content tags, coloured by
+significance (grey 0 -> teal -> blue -> violet 3). Size is the geometric mean
+of the score's position between the lowest and highest shown score and a
+Zipf-like rank curve (1/sqrt(rank)), so both clouds have a few big tags: a
+title's top scores are packed closely (significance 1.5-3 x similar IDFs),
+while a user's scores have a long tail. The table defaults to VNDB's view
+(content + technical, no spoilers) and marks spoilers like VNDB, a small
+yellow "s" (minor) or a red "S" (major); on title pages the cloud follows the
+table's spoiler setting. User pages have no spoiler levels: a tag summed over
+many titles does not spoil any one of them.
 
 ### Voter filters
 

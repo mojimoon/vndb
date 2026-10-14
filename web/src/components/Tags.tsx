@@ -22,16 +22,22 @@ const CLOUD_MOBILE = 20;
 const PAGE = 50;
 const tagUrl = (id: number) => `https://vndb.org/g${id}`;
 
-/** Tag cloud on top (content tags without spoilers), then the filterable, sortable table. */
+/**
+ * Tag cloud on top (content tags), then the filterable, sortable table. On a
+ * title page the table's spoiler setting also applies to the cloud; user pages
+ * have no spoiler levels (a tag summed over many titles spoils none of them).
+ */
 export function TagAnalysis({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; hint: React.ReactNode }) {
   const { t } = useI18n();
+  const [spoil, setSpoil] = useState(0);
+  const level = kind === "vn" ? spoil : 2;
   if (!rows.length) return <p className="rounded-lg border border-line bg-surface p-6 text-sm text-ink-2">{t("tags.none")}</p>;
   return (
     <div className="space-y-4">
       <Card title={t("tags.cloud")}>
-        <TagCloud rows={rows.filter((r) => r.cat === 0 && r.spoiler === 0)} />
+        <TagCloud rows={rows.filter((r) => r.cat === 0 && r.spoiler <= level)} marks={kind === "vn"} hint={t(kind === "vn" ? "tags.cloudHintVn" : "tags.cloudHint")} />
       </Card>
-      <TagTable rows={rows} kind={kind} hint={hint} />
+      <TagTable rows={rows} kind={kind} hint={hint} spoil={level} setSpoil={setSpoil} />
     </div>
   );
 }
@@ -47,17 +53,24 @@ export const sigColor = (sig: number) => {
 const scramble = (id: number) => Math.imul(id ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
 
 /**
- * Word cloud: size by score (linear, so the top tags stand out), colour by
- * significance. Phones show the top CLOUD_MOBILE tags in a narrower size range.
+ * Word cloud, colour by significance. Size is the geometric mean of the score's
+ * position between the lowest and highest shown score and a Zipf-like rank
+ * curve, so only a handful of tags are big whether the scores are spread out
+ * (user pages) or packed together (title pages, where many tags score alike).
+ * Phones show the top CLOUD_MOBILE tags in a narrower size range.
  */
-export function TagCloud({ rows }: { rows: TagRow[] }) {
+export function TagCloud({ rows, marks, hint }: { rows: TagRow[]; marks: boolean; hint: string }) {
   const { t } = useI18n();
   const top = useMemo(() => [...rows].sort((a, b) => b.score - a.score).slice(0, CLOUD), [rows]);
   if (!top.length) return <p className="text-sm text-ink-3">{t("tags.none")}</p>;
   const hi = top[0].score;
   const lo = top[top.length - 1].score;
-  const frac = (s: number) => (hi > lo ? (s - lo) / (hi - lo) : 1);
+  const n = top.length;
   const order = new Map(top.map((r, i) => [r.id, i]));
+  const zipfLo = 1 / Math.sqrt(n);
+  const zipf = (i: number) => (n > 1 ? (1 / Math.sqrt(i + 1) - zipfLo) / (1 - zipfLo) : 1);
+  const lin = (s: number) => (hi > lo ? (s - lo) / (hi - lo) : 1);
+  const size = (r: TagRow) => Math.sqrt(zipf(order.get(r.id)!) * lin(r.score));
   const words = [...top].sort((a, b) => scramble(a.id) - scramble(b.id));
   return (
     <>
@@ -66,7 +79,7 @@ export function TagCloud({ rows }: { rows: TagRow[] }) {
         lang="en"
       >
         {words.map((r) => {
-          const f = frac(r.score);
+          const f = size(r);
           return (
             <li key={r.id} className={order.get(r.id)! >= CLOUD_MOBILE ? "hidden sm:block" : undefined}>
               <a
@@ -82,6 +95,7 @@ export function TagCloud({ rows }: { rows: TagRow[] }) {
                 }}
               >
                 {r.name}
+                {marks && <SpoilerMark level={r.spoiler} />}
               </a>
             </li>
           );
@@ -93,7 +107,7 @@ export function TagCloud({ rows }: { rows: TagRow[] }) {
           <span aria-hidden className="h-2 w-20 rounded-full" style={{ background: "linear-gradient(to right in oklab, var(--sig-0), var(--sig-1), var(--sig-2), var(--sig-3))" }} />3
         </span>
         <span>{t("tags.legend.size")}</span>
-        <span>{t("tags.cloudHint")}</span>
+        <span>{hint}</span>
       </div>
     </>
   );
@@ -114,11 +128,10 @@ export function SpoilerMark({ level }: { level: number }) {
   );
 }
 
-function TagTable({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; hint: React.ReactNode }) {
+function TagTable({ rows, kind, hint, spoil, setSpoil }: { rows: TagRow[]; kind: "vn" | "user"; hint: React.ReactNode; spoil: number; setSpoil: (s: number) => void }) {
   const { t } = useI18n();
   // Default as on VNDB: content + technical, no spoilers.
   const [cats, setCats] = useState<number[]>([0, 2]);
-  const [spoil, setSpoil] = useState(0);
   const [sort, setSort] = useState<{ k: Key; asc: boolean }>({ k: "score", asc: false });
   const [all, setAll] = useState(false);
   const shown = useMemo(() => {
@@ -170,6 +183,7 @@ function TagTable({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; h
             </button>
           );
         })}
+        {kind === "vn" && (
         <select value={spoil} onChange={(e) => setSpoil(Number(e.target.value))} aria-label={t("tags.col.spoiler")} className="rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink">
           {[0, 1, 2].map((s) => (
             <option key={s} value={s}>
@@ -177,6 +191,7 @@ function TagTable({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; h
             </option>
           ))}
         </select>
+        )}
         <span className="tabular ml-auto text-ink-3">{t("tags.count", { n: shown.length, total: rows.length })}</span>
       </div>
       <div className="overflow-x-auto">
@@ -191,7 +206,7 @@ function TagTable({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; h
                   <a href={tagUrl(r.id)} target="_blank" rel="noreferrer" className="hover:text-accent-ink hover:underline">
                     {r.name}
                   </a>
-                  <SpoilerMark level={r.spoiler} />
+                  {kind === "vn" && <SpoilerMark level={r.spoiler} />}
                 </td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-ink-2">{t(`tags.cat.${r.cat}` as StringKey)}</td>
                 <td className="tabular px-3 py-1.5 text-right text-ink-2">{r.freq.toLocaleString()}</td>
