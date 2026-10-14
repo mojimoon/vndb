@@ -58,7 +58,7 @@ export default function Overview() {
         </Card>
         <div className="grid grid-cols-3 gap-2 lg:grid-cols-1 lg:grid-rows-3">
           <Stat label={t("vn.meanStd")} value={a.mean !== null && a.std !== null ? `${a.mean.toFixed(2)} ± ${a.std.toFixed(2)}` : "—"} />
-          <Stat label={t("vn.ratings.sp")} value={a.sp ? `${(a.sp.mean * 100).toFixed(0)}%` : "—"} />
+          <Stat label={t("vn.ratings.sp")} value={a.sp ? `${(a.sp.mean * 100).toFixed(1)}%` : "—"} />
           <Stat label={t("vn.ratings.bias")} value={a.bias !== null ? signed(a.bias) : "—"} />
         </div>
       </div>
