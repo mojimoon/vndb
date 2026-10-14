@@ -85,8 +85,7 @@ export default function UserSearch() {
 const BOARDS: [keyof NonNullable<Meta["leaderboards"]>, StringKey, (v: number) => string][] = [
   ["most_votes", "lb.mostVotes", (v) => v.toLocaleString()],
   ["most_votes_year", "lb.mostVotesYear", (v) => v.toLocaleString()],
-  ["highest_mean", "lb.highestMean", (v) => v.toFixed(2)],
-  ["lowest_mean", "lb.lowestMean", (v) => v.toFixed(2)],
+  ["most_reviews", "lb.mostReviews", (v) => v.toLocaleString()],
   ["most_mainstream", "lb.mainstream", (v) => v.toFixed(3)],
   ["most_contrarian", "lb.contrarian", (v) => v.toFixed(3)],
 ];
@@ -98,7 +97,7 @@ function Leaderboards({ lb, year }: { lb: NonNullable<Meta["leaderboards"]>; yea
       <h2 className="text-lg font-semibold">{t("lb.title")}</h2>
       <p className="text-sm text-ink-2">{t("lb.hint", { n: lb.min_votes })}</p>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {BOARDS.map(([key, title, fmt]) => (
+        {BOARDS.filter(([key]) => lb[key]).map(([key, title, fmt]) => (
           <Board key={key} title={t(title, { y: year })} rows={lb[key] as LeaderEntry[]} fmt={fmt} />
         ))}
       </div>

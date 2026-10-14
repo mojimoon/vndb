@@ -1,6 +1,7 @@
 import { Link } from "react-router";
-import { methodName, relationName, useI18n } from "../../lib/i18n";
-import { scoreLabels } from "../../lib/format";
+import { langName, methodName, relationName, useI18n } from "../../lib/i18n";
+import { devName, formatInt, scoreLabels, year } from "../../lib/format";
+import type { CatalogueItem } from "../../lib/api";
 import { BarChart, cumulativeLine } from "../../components/Charts";
 import { Card, Stat, VnLink } from "../../components/VnLink";
 import { useVnContext } from "./VnLayout";
@@ -8,18 +9,39 @@ import { useVnContext } from "./VnLayout";
 export default function Overview() {
   const { t, lang } = useI18n();
   const { vn, meta, cat } = useVnContext();
-  const featured = meta.info.featured.filter((m) => vn.ranks[m]).slice(0, 4);
+  const grand = meta.info.default_method;
+  const me = cat.byId.get(vn.id);
+  // The grand ranking overall and within the title's release year, developer and original language.
+  const scoped = (pred: (o: CatalogueItem) => boolean) => {
+    if (me?.sci_rank == null) return null;
+    let rank = 1;
+    let of = 0;
+    for (const o of cat.items) {
+      if (o.sci_rank == null || !pred(o)) continue;
+      of++;
+      if (o.sci_rank < me.sci_rank) rank++;
+    }
+    return { rank, of };
+  };
+  const y = year(me?.released ?? null);
+  const tiles = [
+    { label: methodName(grand, lang), to: "/", r: vn.ranks[grand] ? { rank: vn.ranks[grand][0], of: cat.items.length } : null },
+    y && { label: String(y), to: `/?from=${y}&to=${y}`, r: scoped((o) => year(o.released) === y) },
+    me?.dev_id && { label: devName(me, lang) ?? "", to: `/?dev=${me.dev_id}`, r: scoped((o) => o.dev_id === me.dev_id) },
+    me?.olang && { label: langName(me.olang, lang), to: `/?lang=${me.olang}`, r: scoped((o) => o.olang === me.olang) },
+  ].filter((x): x is { label: string; to: string; r: { rank: number; of: number } } => !!x && !!x.r);
   const a = vn.analysis;
   const signed = (x: number) => (x > 0 ? "+" : "") + x.toFixed(2);
   return (
     <div className="space-y-6">
       <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {featured.map((m) => (
-          <Link key={m} to={`/?m=${m}`} className="rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-accent">
-            <div className="truncate text-xs text-ink-2" title={methodName(m, lang)}>
-              {methodName(m, lang)}
+        {tiles.map(({ label, to, r }, i) => (
+          <Link key={i} to={to} className="rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-accent" title={i ? `${methodName(grand, lang)} · ${label}` : label}>
+            <div className="truncate text-xs text-ink-2">{label}</div>
+            <div className="mt-0.5 flex items-baseline gap-1.5">
+              <span className="tabular text-xl font-semibold">#{r.rank}</span>
+              <span className="tabular text-xs text-ink-3">/ {formatInt(r.of)}</span>
             </div>
-            <div className="tabular mt-0.5 text-xl font-semibold">#{vn.ranks[m][0]}</div>
           </Link>
         ))}
       </section>

@@ -98,6 +98,24 @@ export interface Note {
   sp: number | null; // 0-100: where the vote sits within the author's list
 }
 
+export interface PairNote {
+  vote: number; // 10-100, 0 = no vote
+  date: number;
+  text: string;
+  labels: number;
+  sp: number | null;
+}
+
+/** A user who left a note on both VNs being compared. */
+export interface NotePair {
+  uid: number;
+  name: string;
+  hasPage: boolean;
+  nvotes: number;
+  a: PairNote;
+  b: PairNote;
+}
+
 export interface NotesPage {
   total: number;
   matched: number;
@@ -160,8 +178,7 @@ export interface Meta {
     min_votes: number;
     most_votes: LeaderEntry[];
     most_votes_year: LeaderEntry[];
-    highest_mean: LeaderEntry[];
-    lowest_mean: LeaderEntry[];
+    most_reviews?: LeaderEntry[];
     most_mainstream: LeaderEntry[];
     most_contrarian: LeaderEntry[];
   };
@@ -422,6 +439,7 @@ export function notesPath(idx: number, page: number, q: NotesQuery = {}): string
 export const useJoint = (a: number | null | undefined, b: number | null | undefined) =>
   useApi<Joint>(a != null && b != null && a !== b ? `/api/joint/${a}/${b}` : null);
 export const useVnNotes = (idx: number | null | undefined, page: number, q?: NotesQuery) => useApi<NotesPage>(idx != null ? notesPath(idx, page, q) : null);
+export const useBothNotes = (a: number, b: number) => useApi<{ a: number; b: number; pairs: NotePair[] }>(a !== b ? `/api/notes/both/${a}/${b}` : null);
 export const useUserNotes = (uid: number) => useApi<{ uid: number; notes: UserNote[] }>(`/api/user/${uid}/notes`);
 
 /** Start the requests every page needs as soon as the app loads. */
