@@ -11,9 +11,11 @@ export default function Ranks() {
   const { vn, meta } = useVnContext();
   const codes = Object.keys(vn.ranks);
   const total = meta?.stats.ranked_vns ?? null;
+  const scale = rankScale(vn, total);
   const histMethods = meta?.info.history_methods ?? [meta?.info.default_method ?? "borda_grand", "vndb"];
   return (
     <div className="space-y-4">
+
       <Card title={t("vn.history")}>
         {vn.history.length > 1 ? (
           <>
@@ -29,15 +31,15 @@ export default function Ranks() {
           <p className="text-sm text-ink-3">{t("vn.historyEmpty")}</p>
         )}
       </Card>
-      <RankitTable vn={vn} total={total} />
       {/* Merged rankings on the left; PONet and the VNDB rating (reference) on the right. */}
       <div className="grid items-start gap-4 md:grid-cols-2">
-        <GroupTable group="merged" codes={codes} vn={vn} total={total} />
+        <GroupTable group="merged" codes={codes} vn={vn} scale={scale} />
         <div className="space-y-4">
-          <GroupTable group="po" codes={codes} vn={vn} total={total} />
-          <GroupTable group="ref" codes={codes} vn={vn} total={total} />
+          <GroupTable group="po" codes={codes} vn={vn} scale={scale} />
+          <GroupTable group="ref" codes={codes} vn={vn} scale={scale} />
         </div>
       </div>
+      <RankitTable vn={vn} scale={scale} />
     </div>
   );
 }
@@ -45,7 +47,43 @@ export default function Ranks() {
 type Ranked = { ranks: Record<string, [number, number | null]> };
 const top = (rank: number, total: number) => `top ${Math.max(0.1, (rank / total) * 100).toFixed(1)}%`;
 
-function GroupTable({ group, codes, vn, total }: { group: MethodGroup; codes: string[]; vn: Ranked; total: number | null }) {
+type RankScale = { total: number | null; color: (rank: number) => string };
+const rankStops = [0.01, 0.05, 0.2, 0.5, 1];
+const rankColors = ["var(--rank-purple)", "var(--accent-ink)", "var(--rank-cyan)", "var(--up)", "var(--text)"];
+
+function rankScale(vn: Ranked, total: number | null): RankScale {
+  if (!total || total <= 0) return { total: null, color: () => "var(--text)" };
+  const position = (rank: number) => {
+    const percentile = Math.max(rankStops[0], Math.min(1, rank / total));
+    const end = rankStops.findIndex((stop) => percentile <= stop);
+    if (end === 0) return 0;
+    return end - 1 + Math.log(percentile / rankStops[end - 1]) / Math.log(rankStops[end] / rankStops[end - 1]);
+  };
+  const positions = Object.values(vn.ranks).map(([rank]) => position(rank));
+  const center = positions.length ? positions.reduce((sum, p) => sum + p, 0) / positions.length : 0;
+  return {
+    total,
+    color: (rank) => {
+      const absolute = position(rank);
+      // Amplify within-work differences slightly, but never shift more than 1 color stops.
+      const relative = Math.max(-1, Math.min(1, (absolute - center) * 0.5));
+      const p = Math.max(0, Math.min(rankColors.length - 1, absolute + relative));
+      const start = Math.min(Math.floor(p), rankColors.length - 2);
+      return `color-mix(in oklab, ${rankColors[start + 1]} ${(p - start) * 100}%, ${rankColors[start]})`;
+    },
+  };
+}
+
+function RankDisplay({ rank, scale }: { rank: number; scale: RankScale }) {
+  return (
+    <span className="tabular inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      <span className="font-medium" style={{ color: scale.color(rank) }}>#{rank}</span>
+      {scale.total !== null && <span className="text-[11px] text-ink-3">{top(rank, scale.total)}</span>}
+    </span>
+  );
+}
+
+function GroupTable({ group, codes, vn, scale }: { group: MethodGroup; codes: string[]; vn: Ranked; scale: RankScale }) {
   const { t, lang } = useI18n();
   const list = codes.filter((c) => methodGroup(c) === group);
   if (!list.length) return null;
@@ -60,8 +98,7 @@ function GroupTable({ group, codes, vn, total }: { group: MethodGroup; codes: st
                 {methodName(c, lang)}
               </Link>
             </td>
-            <td className="tabular px-3 py-1.5 text-right font-medium">#{vn.ranks[c][0]}</td>
-            {total && <td className="tabular w-16 px-1 py-1.5 text-right text-xs text-ink-3">{top(vn.ranks[c][0], total)}</td>}
+            <td className="px-3 py-1.5 text-right"><RankDisplay rank={vn.ranks[c][0]} scale={scale} /></td>
             <td className="tabular w-20 px-3 py-1.5 text-right text-xs text-ink-3">{formatScore(vn.ranks[c][1])}</td>
           </tr>
         ))}
@@ -70,13 +107,13 @@ function GroupTable({ group, codes, vn, total }: { group: MethodGroup; codes: st
   );
 }
 
-/** Scientific rankings as a ranker x variable grid, as on the Methods page; the best rank is highlighted. */
-function RankitTable({ vn, total }: { vn: Ranked; total: number | null }) {
+/** Scientific rankings use the same percentile-based color scale as the other methods. */
+function RankitTable({ vn, scale }: { vn: Ranked; scale: RankScale }) {
   const { t, lang } = useI18n();
   const vars = VARIABLE_CODES.filter((v) => RANKER_CODES.some((r) => vn.ranks[`${r}_${v}`]));
   const rankers = RANKER_CODES.filter((r) => vars.some((v) => vn.ranks[`${r}_${v}`]));
   if (!vars.length) return null;
-  const best = Math.min(...rankers.flatMap((r) => vars.map((v) => vn.ranks[`${r}_${v}`]?.[0] ?? Infinity)));
+
   return (
     <section className="overflow-x-auto rounded-lg border border-line bg-surface">
       <table className="w-full min-w-[640px] text-sm">
@@ -103,9 +140,8 @@ function RankitTable({ vn, total }: { vn: Ranked; total: number | null }) {
                 return (
                   <td key={v} className="px-3 py-1.5 text-right">
                     {x ? (
-                      <Link to={`/?m=${code}`} className="group inline-block" title={`${methodName(code, lang)} · ${formatScore(x[1])}`}>
-                        <span className={`tabular font-medium group-hover:text-accent-ink ${x[0] === best ? "text-accent-ink" : ""}`}>#{x[0]}</span>
-                        {total && <span className="tabular block text-[11px] text-ink-3">{top(x[0], total)}</span>}
+                      <Link to={`/?m=${code}`} className="inline-block hover:underline" title={`${methodName(code, lang)} · ${formatScore(x[1])}`}>
+                        <RankDisplay rank={x[0]} scale={scale} />
                       </Link>
                     ) : (
                       <span className="text-ink-3">—</span>

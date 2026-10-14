@@ -14,6 +14,8 @@
   --accent: #2a78d6;
   --accent-ink: #1c5cab;
   --accent-soft: #cde2fb;
+  --rank-purple: #7739b5;
+  --rank-cyan: #007080;
   --series-2: #eb6834;
   --up: #006300;
   --down: #c03030;
@@ -37,6 +39,8 @@
     --accent: #3987e5;
     --accent-ink: #86b6ef;
     --accent-soft: #184f95;
+    --rank-purple: #c499f3;
+    --rank-cyan: #55cbd3;
     --series-2: #d95926;
     --up: #4fc34f;
     --down: #ef7b7b;
@@ -60,6 +64,8 @@
   --accent: #3987e5;
   --accent-ink: #86b6ef;
   --accent-soft: #184f95;
+  --rank-purple: #c499f3;
+  --rank-cyan: #55cbd3;
   --series-2: #d95926;
   --up: #4fc34f;
   --down: #ef7b7b;
