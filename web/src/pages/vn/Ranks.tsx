@@ -11,7 +11,7 @@ export default function Ranks() {
   const { vn, meta } = useVnContext();
   const codes = Object.keys(vn.ranks);
   const total = meta?.stats.ranked_vns ?? null;
-  const scale = rankScale(vn, total);
+  const scale = { total: total && total > 0 ? total : null };
   const histMethods = meta?.info.history_methods ?? [meta?.info.default_method ?? "borda_grand", "vndb"];
   return (
     <div className="space-y-4">
@@ -47,37 +47,12 @@ export default function Ranks() {
 type Ranked = { ranks: Record<string, [number, number | null]> };
 const top = (rank: number, total: number) => `top ${Math.max(0.1, (rank / total) * 100).toFixed(1)}%`;
 
-type RankScale = { total: number | null; color: (rank: number) => string };
-const rankStops = [0.01, 0.05, 0.2, 0.5, 1];
-const rankColors = ["var(--rank-purple)", "var(--accent-ink)", "var(--rank-cyan)", "var(--up)", "var(--text)"];
-
-function rankScale(vn: Ranked, total: number | null): RankScale {
-  if (!total || total <= 0) return { total: null, color: () => "var(--text)" };
-  const position = (rank: number) => {
-    const percentile = Math.max(rankStops[0], Math.min(1, rank / total));
-    const end = rankStops.findIndex((stop) => percentile <= stop);
-    if (end === 0) return 0;
-    return end - 1 + Math.log(percentile / rankStops[end - 1]) / Math.log(rankStops[end] / rankStops[end - 1]);
-  };
-  const positions = Object.values(vn.ranks).map(([rank]) => position(rank));
-  const center = positions.length ? positions.reduce((sum, p) => sum + p, 0) / positions.length : 0;
-  return {
-    total,
-    color: (rank) => {
-      const absolute = position(rank);
-      // Amplify within-work differences slightly, but never shift more than 1 color stops.
-      const relative = Math.max(-1, Math.min(1, (absolute - center) * 0.5));
-      const p = Math.max(0, Math.min(rankColors.length - 1, absolute + relative));
-      const start = Math.min(Math.floor(p), rankColors.length - 2);
-      return `color-mix(in oklab, ${rankColors[start + 1]} ${(p - start) * 100}%, ${rankColors[start]})`;
-    },
-  };
-}
+type RankScale = { total: number | null };
 
 function RankDisplay({ rank, scale }: { rank: number; scale: RankScale }) {
   return (
     <span className="tabular inline-flex items-baseline gap-1.5 whitespace-nowrap">
-      <span className="font-medium" style={{ color: scale.color(rank) }}>#{rank}</span>
+      <span className="font-bold">#{rank}</span>
       {scale.total !== null && <span className="text-[11px] text-ink-3">{top(rank, scale.total)}</span>}
     </span>
   );
@@ -107,7 +82,7 @@ function GroupTable({ group, codes, vn, scale }: { group: MethodGroup; codes: st
   );
 }
 
-/** Scientific rankings use the same percentile-based color scale as the other methods. */
+
 function RankitTable({ vn, scale }: { vn: Ranked; scale: RankScale }) {
   const { t, lang } = useI18n();
   const vars = VARIABLE_CODES.filter((v) => RANKER_CODES.some((r) => vn.ranks[`${r}_${v}`]));

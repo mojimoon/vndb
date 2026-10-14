@@ -2,6 +2,7 @@ import { methodGroup, methodName, useI18n, type MethodGroup } from "../lib/i18n"
 
 const GROUP_ORDER: MethodGroup[] = ["merged", "po", "rankit", "ref"];
 
+
 export function MethodSelect({
   methods,
   featured,
@@ -21,6 +22,7 @@ export function MethodSelect({
 }) {
   const { t, lang } = useI18n();
   const all = methods;
+
   return (
     <select
       id={id}

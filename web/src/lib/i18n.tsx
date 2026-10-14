@@ -645,10 +645,10 @@ const RANKERS: Record<string, Text> = {
   massey: { zh: "Massey", en: "Massey" },
   colley: { zh: "Colley", en: "Colley" },
   keener: { zh: "Keener", en: "Keener" },
-  markov_rv: { zh: "Markov（胜率）", en: "Markov (win share)" },
-  markov_rdv: { zh: "Markov（胜率差）", en: "Markov (share margin)" },
-  markov_sdv: { zh: "Markov（分差）", en: "Markov (score margin)" },
-  od: { zh: "攻防 (OD)", en: "Offence–defence" },
+  markov_rv: { zh: "Markov (胜率)", en: "Markov (win share)" },
+  markov_rdv: { zh: "Markov (胜率差)", en: "Markov (share margin)" },
+  markov_sdv: { zh: "Markov (分差)", en: "Markov (score margin)" },
+  od: { zh: "OD (攻防)", en: "Offence–defence" },
   difference: { zh: "差值", en: "Difference" },
 };
 
