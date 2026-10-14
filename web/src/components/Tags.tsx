@@ -15,9 +15,10 @@ export interface TagRow {
   mean?: number; // user page: the user's mean vote (1-10) on titles with the tag
 }
 
-type Key = "name" | "cat" | "freq" | "sig" | "spoiler" | "voters" | "mean" | "score";
+type Key = "name" | "cat" | "freq" | "sig" | "voters" | "mean" | "score";
 
-const CLOUD = 60;
+const CLOUD = 35;
+const CLOUD_MOBILE = 20;
 const PAGE = 50;
 const tagUrl = (id: number) => `https://vndb.org/g${id}`;
 
@@ -29,46 +30,87 @@ export function TagAnalysis({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" |
     <div className="space-y-4">
       <Card title={t("tags.cloud")}>
         <TagCloud rows={rows.filter((r) => r.cat === 0 && r.spoiler === 0)} />
-        <p className="mt-3 text-xs text-ink-3">{t("tags.cloudHint")}</p>
       </Card>
       <TagTable rows={rows} kind={kind} hint={hint} />
     </div>
   );
 }
 
-/** Tags sized by score (the top ones only), in alphabetical order. */
+/** Colour for a significance of 0..3: grey -> teal -> blue -> violet (tokens --sig-0..3 in index.css). */
+export const sigColor = (sig: number) => {
+  const x = Math.max(0, Math.min(3, sig));
+  const i = Math.min(2, Math.floor(x));
+  return `color-mix(in oklab, var(--sig-${i + 1}) ${Math.round((x - i) * 100)}%, var(--sig-${i}))`;
+};
+
+/** Scrambles the order (stable per tag) so big and small words mix like in a word cloud. */
+const scramble = (id: number) => Math.imul(id ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
+
+/**
+ * Word cloud: size by score (linear, so the top tags stand out), colour by
+ * significance. Phones show the top CLOUD_MOBILE tags in a narrower size range.
+ */
 export function TagCloud({ rows }: { rows: TagRow[] }) {
   const { t } = useI18n();
   const top = useMemo(() => [...rows].sort((a, b) => b.score - a.score).slice(0, CLOUD), [rows]);
   if (!top.length) return <p className="text-sm text-ink-3">{t("tags.none")}</p>;
   const hi = top[0].score;
   const lo = top[top.length - 1].score;
-  const frac = (s: number) => (hi > lo ? Math.sqrt((s - lo) / (hi - lo)) : 1);
-  const words = [...top].sort((a, b) => a.name.localeCompare(b.name));
+  const frac = (s: number) => (hi > lo ? (s - lo) / (hi - lo) : 1);
+  const order = new Map(top.map((r, i) => [r.id, i]));
+  const words = [...top].sort((a, b) => scramble(a.id) - scramble(b.id));
   return (
-    <ul className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 py-2 [--cloud:0.7] sm:gap-x-4 sm:gap-y-1.5 sm:[--cloud:1]" lang="en">
-      {words.map((r) => {
-        const f = frac(r.score);
-        return (
-          <li key={r.id}>
-            <a
-              href={tagUrl(r.id)}
-              target="_blank"
-              rel="noreferrer"
-              title={`${r.name} · ${t("tags.col.score")} ${r.score.toFixed(2)}`}
-              className="leading-tight hover:text-accent-ink hover:underline"
-              style={{
-                fontSize: `calc(${(0.8 + f * 1.15).toFixed(2)}rem * var(--cloud))`,
-                fontWeight: f > 0.6 ? 600 : f > 0.3 ? 500 : 400,
-                color: `color-mix(in oklab, var(--accent-ink) ${Math.round(35 + f * 65)}%, var(--text-2))`,
-              }}
-            >
-              {r.name}
-            </a>
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      <ul
+        className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 py-2 [--cmax:2.1rem] [--cmin:0.8rem] sm:gap-x-5 sm:gap-y-2 sm:[--cmax:3.2rem] sm:[--cmin:0.85rem]"
+        lang="en"
+      >
+        {words.map((r) => {
+          const f = frac(r.score);
+          return (
+            <li key={r.id} className={order.get(r.id)! >= CLOUD_MOBILE ? "hidden sm:block" : undefined}>
+              <a
+                href={tagUrl(r.id)}
+                target="_blank"
+                rel="noreferrer"
+                title={`${r.name} · ${t("tags.col.score")} ${r.score.toFixed(2)} · ${t("tags.col.sig")} ${r.sig.toFixed(2)}`}
+                className="block leading-[1.1] tracking-tight hover:underline"
+                style={{
+                  fontSize: `calc(var(--cmin) + (var(--cmax) - var(--cmin)) * ${f.toFixed(3)})`,
+                  fontWeight: f > 0.5 ? 700 : f > 0.2 ? 600 : 500,
+                  color: sigColor(r.sig),
+                }}
+              >
+                {r.name}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-3">
+        <span className="inline-flex items-center gap-1.5">
+          {t("tags.legend.color")} 0
+          <span aria-hidden className="h-2 w-20 rounded-full" style={{ background: "linear-gradient(to right in oklab, var(--sig-0), var(--sig-1), var(--sig-2), var(--sig-3))" }} />3
+        </span>
+        <span>{t("tags.legend.size")}</span>
+        <span>{t("tags.cloudHint")}</span>
+      </div>
+    </>
+  );
+}
+
+/** VNDB-style spoiler marker after a tag name: yellow "s" (minor), red "S" (major). */
+export function SpoilerMark({ level }: { level: number }) {
+  const { t } = useI18n();
+  if (!level) return null;
+  return (
+    <sup
+      title={t(`tags.spoiler.${level}` as StringKey)}
+      aria-label={t(`tags.spoiler.${level}` as StringKey)}
+      className={`ml-0.5 cursor-help font-bold ${level === 1 ? "text-[10px] text-spoil-minor" : "text-[11px] text-down"}`}
+    >
+      {level === 1 ? "s" : "S"}
+    </sup>
   );
 }
 
@@ -95,7 +137,6 @@ function TagTable({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; h
     ["cat", "tags.col.cat", false],
     ["freq", kind === "vn" ? "tags.col.freq" : "tags.col.titles", true],
     ["sig", "tags.col.sig", true],
-    ["spoiler", "tags.col.spoiler", true],
     kind === "vn" ? ["voters", "tags.col.voters", true] : ["mean", "tags.col.mean", true],
     ["score", "tags.col.score", true],
   ];
@@ -103,7 +144,7 @@ function TagTable({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; h
     <th key={k} scope="col" aria-sort={sort.k === k ? (sort.asc ? "ascending" : "descending") : undefined} className={`px-3 py-2 font-medium ${num ? "text-right" : ""}`}>
       <button
         type="button"
-        onClick={() => setSort({ k, asc: sort.k === k ? !sort.asc : k === "name" || k === "cat" || k === "spoiler" })}
+        onClick={() => setSort({ k, asc: sort.k === k ? !sort.asc : k === "name" || k === "cat" })}
         className={`whitespace-nowrap hover:text-ink ${sort.k === k ? "text-ink" : ""}`}
       >
         {t(label)}
@@ -150,11 +191,13 @@ function TagTable({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; h
                   <a href={tagUrl(r.id)} target="_blank" rel="noreferrer" className="hover:text-accent-ink hover:underline">
                     {r.name}
                   </a>
+                  <SpoilerMark level={r.spoiler} />
                 </td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-ink-2">{t(`tags.cat.${r.cat}` as StringKey)}</td>
                 <td className="tabular px-3 py-1.5 text-right text-ink-2">{r.freq.toLocaleString()}</td>
-                <td className="tabular px-3 py-1.5 text-right">{r.sig.toFixed(2)}</td>
-                <td className={`whitespace-nowrap px-3 py-1.5 text-right ${r.spoiler ? "text-down" : "text-ink-3"}`}>{t(`tags.spoil.${r.spoiler}` as StringKey)}</td>
+                <td className="tabular px-3 py-1.5 text-right font-medium" style={{ color: sigColor(r.sig) }}>
+                  {r.sig.toFixed(2)}
+                </td>
                 {kind === "vn" ? (
                   <td className="tabular px-3 py-1.5 text-right text-ink-2">{r.voters ?? "—"}</td>
                 ) : (
