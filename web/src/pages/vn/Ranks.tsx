@@ -51,29 +51,19 @@ function VndbHistory({ history }: { history: VnDetail["history"] }) {
   const { t } = useI18n();
   const pts = history.filter((p) => p[3] != null || p[4] != null);
   if (pts.length < 2) return null;
+  const votes = pts.some((p) => p[4] != null);
   return (
     <Card title={t("vn.ratingHistory")}>
       <p className="mb-2 text-xs text-ink-3">{t("vn.ratingHistoryHint")}</p>
-      <div className="grid gap-4 md:grid-cols-2">
-        <RankLines
-          points={pts.map((p) => ({ x: p[0], ys: [p[3] ?? null] }))}
-          names={[t("vn.rating")]}
-          formatX={dayToDate}
-          formatY={(v) => v.toFixed(2)}
-          values
-          height={160}
-          label={t("vn.rating")}
-        />
-        <RankLines
-          points={pts.map((p) => ({ x: p[0], ys: [p[4] ?? null] }))}
-          names={[t("rank.col.votes")]}
-          formatX={dayToDate}
-          formatY={(v) => (v >= 10_000 ? compact(v) : Math.round(v).toLocaleString())}
-          values
-          height={160}
-          label={t("rank.col.votes")}
-        />
-      </div>
+      <RankLines
+        points={pts.map((p) => ({ x: p[0], ys: votes ? [p[3] ?? null, p[4] ?? null] : [p[3] ?? null] }))}
+        names={votes ? [t("vn.rating"), t("rank.col.votes")] : [t("vn.rating")]}
+        formatX={dayToDate}
+        formatY={(v) => v.toFixed(2)}
+        right={votes ? (v) => (v >= 10_000 ? compact(v) : Math.round(v).toLocaleString()) : undefined}
+        values
+        label={t("vn.ratingHistory")}
+      />
     </Card>
   );
 }

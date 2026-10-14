@@ -260,7 +260,7 @@ def test_storage_helpers():
     week_or_month = [d for d in kept if 90 < today - d <= 365]
     assert 38 <= len(week_or_month) <= 53
     old = sorted(d for d in kept if today - d > 365)
-    assert all(_date(d).day == 1 for d in old[1:]) and 20 <= len(old) <= 22  # old[0]: first day on record
+    assert all(_date(d + 1).day == 1 for d in old) and 20 <= len(old) <= 22  # last day of each month
     # Thinning is stable: thinning again (a day later) never brings back or loses a monthly point.
     again = keep_days(kept | {today + 1}, today + 1)
     assert {d for d in old} <= again

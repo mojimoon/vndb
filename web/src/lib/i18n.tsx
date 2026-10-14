@@ -62,7 +62,7 @@ const STRINGS = {
     "vn.h2h.contested": "势均力敌",
     "vn.h2h.tied": "常打平手",
     "vn.h2h.none": "没有足够的共同评分用户。",
-    "vn.h2h.row": "{w} 胜 · {t} 平 · {l} 负（共 {n} 人）",
+    "vn.h2h.row": "{w} 胜 / {t} 平 / {l} 负（共 {n} 人）",
     "vn.relations": "关联作品",
     "vn.showCover": "显示封面",
     "vn.nsfwCover": "封面可能含有敏感内容",
@@ -120,12 +120,13 @@ const STRINGS = {
     "rank.movers.none": "排名历史仍在积累，满 30 天后才会出现变动。",
     "rank.tab.history": "历史",
     "rank.history.none": "历史记录从第一次每日更新开始积累。",
-    "rank.history.hint": "每日更新时记录：{method}名次与当天的 VNDB 排名、评分和票数。自 {first} 起共 {n} 天；近 90 天每天一条，一年内每周一条，更早每月一条，所选日期没有记录时显示之前最近的一天。“现在”为今日名次及其后的变化。上方筛选只作用于目前仍在榜上的作品。",
+    "rank.history.hint": "每日更新时记录：{method}名次与当天的 VNDB 排名、评分和票数。自 {first} 起共 {n} 天；近 90 天每天一条，一年内每周一条，更早每月一条，所选日期没有记录时显示之前最近的一天。",
     "rank.history.date": "日期",
     "rank.history.prev": "上一个记录日",
     "rank.history.next": "下一个记录日",
     "rank.history.ago": "{n} 前",
     "rank.history.now": "现在",
+    "rank.history.diff": "变化",
     "rank.history.gone": "已不在榜上",
     "rank.history.count": "{n} / {total} 部",
     "rank.history.empty": "没有符合筛选条件的作品。",
@@ -149,9 +150,9 @@ const STRINGS = {
     "vn.ratings.std": "标准差",
     "vn.ratings.count": "评分人数（排名用）",
     "vn.ratings.sp": "在评分者心中的位置",
-    "vn.ratings.spHint": "把每个评分换算成它在该用户全部评分中的百分位：越靠右，说明评分者越把它当作自己的最爱之一。平均 {p}。",
+    "vn.ratings.spHint": "平均 {p}：把每个评分换算成它在该用户全部评分中的百分位：越靠右，说明评分者越把它当作自己的最爱之一。",
     "vn.ratings.bias": "评分者偏好",
-    "vn.ratings.biasHint": "评分减去该评分者自己的平均分后再取平均：{b}。正数表示大家给它的分数高于他们平时的水平。",
+    "vn.ratings.biasHint": "平均 {b}：评分减去该评分者自己的平均分后再取平均。",
     "label.1": "在玩",
     "label.2": "已完成",
     "label.3": "搁置",
@@ -168,8 +169,8 @@ const STRINGS = {
     "vn.similarHint": "评分模式最相似的作品：喜欢本作的用户也倾向于给这些作品打高分（中心化余弦相似度）。",
     "vn.common": "共同评分 {n} 人",
     "user.search.title": "用户",
-    "user.search.hint": "输入 VNDB 用户名、用户编号（u12345）或个人主页链接。只有在已进入排名的作品上至少有 {n} 个评分的用户才有页面。",
-    "user.search.placeholder": "用户名 / u12345",
+    "user.search.hint": "输入 VNDB 用户名、用户编号（u2）或个人主页链接。只有在已进入排名的作品上至少有 {n} 个评分的用户才有页面。",
+    "user.search.placeholder": "用户名 / u2",
     "user.search.go": "查看",
     "user.notFound": "找不到这位用户，或其公开评分不足。",
     "user.tab.overview": "概览",
@@ -224,7 +225,7 @@ const STRINGS = {
     "tags.col.mean": "你的平均分",
     "tags.col.score": "得分",
     "tags.cat.0": "内容",
-    "tags.cat.1": "性内容",
+    "tags.cat.1": "性",
     "tags.cat.2": "技术",
     "tags.spoiler.1": "轻微剧透",
     "tags.spoiler.2": "严重剧透",
@@ -233,8 +234,8 @@ const STRINGS = {
     "tags.spoilUpTo.0": "隐藏剧透",
     "tags.spoilUpTo.1": "显示轻微剧透",
     "tags.spoilUpTo.2": "显示全部剧透",
-    "tags.hintVn": "得分 = 显著度 × IDF，IDF = ln(N / 频次)。显著度是 VNDB 用户对该标签投票（-3～3）的平均值，只保留大于 0 的标签；频次是 VNDB 上带有该标签的作品数，N = {n}（有标签的作品数）。剧透等级按 VNDB 的规则由剧透投票平均值得出。",
-    "tags.hintUser": "得分 = TF × IDF。TF = 你评分的 {n} 部作品中该标签的显著度之和 ÷ {n}；IDF = ln(已排名作品的总评分数 / 带该标签作品的评分数)，即按评分数加权，大多数人的列表里都有的标签权重更低。作品数 = 你评分过的带该标签的作品数，显著度为其平均。这里不区分剧透：汇总了许多作品的标签不会剧透其中某一部。",
+    "tags.hintVn": "TD-IDF 得分 = 显著度 × IDF。显著度 = VNDB 用户对该标签投票（-3～3）的平均值，只保留大于 0 的标签；IDF = ln({n} / 频次)，其中频次是 VNDB 上带有该标签的作品数。",
+    "tags.hintUser": "TD-IDF 得分 = TF × IDF。TF = 用户评分的 {n} 部作品中该标签的显著度之和 ÷ {n}；IDF = ln(已排名作品的总评分数 / 带该标签作品的评分数)，即按评分数加权，大多数人的列表里都有的标签权重更低。",
     "compare.both": "两部都写了短评的用户",
     "compare.bothHint": "按两部作品的评分分组：≥ 7 分为高分，< 7 分为低分。",
     "compare.bothNone": "还没有人同时为这两部作品写过短评。",
@@ -335,7 +336,7 @@ const STRINGS = {
     "chart.above": "{y} 更高",
     "chart.below": "{x} 更高",
     "chart.diag": "一致",
-    "sim.userH2h": "{a} 更高 {h} · 相同 {e} · 对方更高 {l}",
+    "sim.userH2h": "{a} 更高 {h} / 相同 {e} / 对方更高 {l}",
     "sim.theirVotes": "{n} 个评分",
     "sim.open": "点击查看完整对比",
     "sim.similarity": "相似度",
@@ -407,7 +408,7 @@ const STRINGS = {
     "vn.h2h.contested": "Closest calls",
     "vn.h2h.tied": "Most ties",
     "vn.h2h.none": "Not enough users voted on both.",
-    "vn.h2h.row": "{w} wins · {t} ties · {l} losses (of {n})",
+    "vn.h2h.row": "{w} wins / {t} ties / {l} losses (of {n})",
     "vn.relations": "Related",
     "vn.showCover": "Show cover",
     "vn.nsfwCover": "Cover may contain sensitive content",
@@ -465,12 +466,13 @@ const STRINGS = {
     "rank.movers.none": "Rank history is still accumulating; movers appear once it covers 30 days.",
     "rank.tab.history": "History",
     "rank.history.none": "History accumulates from the first daily update.",
-    "rank.history.hint": "Recorded at each daily update: the rank under {method} and that day's VNDB rank, rating and votes. {n} days since {first}: daily for the last 90 days, weekly within a year, monthly before that; a date without a record shows the closest earlier day. “Now” is today's rank and the change since. The filters above only apply to titles still ranked today.",
+    "rank.history.hint": "Recorded at each daily update: the rank under {method} and that day's VNDB rank, rating and votes. {n} days since {first}: daily for the last 90 days, weekly within a year, monthly before that; a date without a record shows the closest earlier day..",
     "rank.history.date": "Date",
     "rank.history.prev": "Previous recorded day",
     "rank.history.next": "Next recorded day",
     "rank.history.ago": "{n} ago",
     "rank.history.now": "Now",
+    "rank.history.diff": "Change",
     "rank.history.gone": "no longer ranked",
     "rank.history.count": "{n} / {total} titles",
     "rank.history.empty": "No titles match the filters.",
@@ -494,9 +496,9 @@ const STRINGS = {
     "vn.ratings.std": "Std. deviation",
     "vn.ratings.count": "Votes (used for ranking)",
     "vn.ratings.sp": "Where voters place it",
-    "vn.ratings.spHint": "Each vote as a percentile within that voter's own list: the further right, the more voters count it among their favourites. Mean {p}.",
+    "vn.ratings.spHint": "Average {p}: Each vote as a percentile within that voter's own list: the further right, the more voters count it among their favourites.",
     "vn.ratings.bias": "Voter preference",
-    "vn.ratings.biasHint": "Average of (vote − that voter's own mean): {b}. Positive means people rate it above their usual level.",
+    "vn.ratings.biasHint": "Average {b}: Average of (vote − that voter's own mean).",
     "label.1": "Playing",
     "label.2": "Finished",
     "label.3": "Stalled",
@@ -513,8 +515,8 @@ const STRINGS = {
     "vn.similarHint": "Titles with the most similar rating pattern: people who like this one tend to rate these highly too (centered cosine similarity).",
     "vn.common": "{n} common voters",
     "user.search.title": "Users",
-    "user.search.hint": "Enter a VNDB username, user id (u12345) or profile link. Users need at least {n} votes on ranked titles to have a page.",
-    "user.search.placeholder": "username / u12345",
+    "user.search.hint": "Enter a VNDB username, user id (u2) or profile link. Users need at least {n} votes on ranked titles to have a page.",
+    "user.search.placeholder": "username / u2",
     "user.search.go": "Open",
     "user.notFound": "User not found, or not enough public votes.",
     "user.tab.overview": "Overview",
@@ -578,8 +580,8 @@ const STRINGS = {
     "tags.spoilUpTo.0": "Hide spoilers",
     "tags.spoilUpTo.1": "Show minor spoilers",
     "tags.spoilUpTo.2": "Spoil me!",
-    "tags.hintVn": "Score = significance × IDF, IDF = ln(N / frequency). Significance is the mean of VNDB users' votes on the tag (-3 to 3); only tags above 0 are kept. Frequency is the number of titles on VNDB with the tag; N = {n} titles with any tag. Spoiler levels follow VNDB's rules on the mean spoiler vote.",
-    "tags.hintUser": "Score = TF × IDF. TF = the tag's significance summed over your {n} voted titles, divided by {n}. IDF = ln(votes on ranked titles / votes on ranked titles with the tag): weighted by votes, so tags that most lists contain weigh less. Titles = your voted titles with the tag, significance is their mean. No spoiler levels here: a tag summed over many titles does not spoil any one of them.",
+    "tags.hintVn": "TF-IDF score = significance × IDF. Significance = mean of VNDB users' votes on the tag (-3 to 3), only tags above 0 are kept; IDF = ln({n} / frequency), where frequency is the number of titles on VNDB with the tag.",
+    "tags.hintUser": "TF-IDF score = TF × IDF. TF = the tag's significance summed over the user's {n} voted titles, divided by {n}; IDF = ln(votes on ranked titles / votes on ranked titles with the tag): weighted by votes, so tags that most lists contain weigh less.",
     "compare.both": "Reviews by people who reviewed both",
     "compare.bothHint": "Grouped by their votes on the two titles: 7 or more is high, below 7 is low.",
     "compare.bothNone": "Nobody has reviewed both titles yet.",
@@ -680,7 +682,7 @@ const STRINGS = {
     "chart.above": "{y} higher",
     "chart.below": "{x} higher",
     "chart.diag": "Equal",
-    "sim.userH2h": "{a} higher {h} · equal {e} · they rate higher {l}",
+    "sim.userH2h": "{a} higher {h} / equal {e} / they rate higher {l}",
     "sim.theirVotes": "{n} votes",
     "sim.open": "Click for the full comparison",
     "sim.similarity": "Similarity",
@@ -717,7 +719,7 @@ const PO: Record<string, { name: Text; desc: Text }> = {
   },
   po_weighted: {
     name: { zh: "加权简易积分", en: "Weighted simple" },
-    desc: { zh: "sgn(x − y) · √n，共同评分人数越多权重越大。", en: "sgn(x − y) · √n, weighting pairs with more common voters." },
+    desc: { zh: "sgn(x − y) × √n，共同评分人数越多权重越大。", en: "sgn(x − y) × √n, weighting pairs with more common voters." },
   },
   po_rw: {
     name: { zh: "随机游走", en: "Random walk" },
@@ -800,11 +802,11 @@ export function methodName(code: string, lang: Lang): string {
   if (MERGED[code]) return MERGED[code].name[lang];
   if (code.startsWith("borda_")) {
     const v = VARIABLES[code.slice(6)];
-    return v ? (lang === "zh" ? `Borda · ${v.zh}` : `Borda · ${v.en}`) : code;
+    return v ? (lang === "zh" ? `Borda - ${v.zh}` : `Borda - ${v.en}`) : code;
   }
-  if (PO[code]) return `PONet · ${PO[code].name[lang]}`;
+  if (PO[code]) return `PONet - ${PO[code].name[lang]}`;
   const parts = splitRankit(code);
-  if (parts && RANKERS[parts[0]]) return `${RANKERS[parts[0]][lang]} · ${VARIABLES[parts[1]][lang]}`;
+  if (parts && RANKERS[parts[0]]) return `${RANKERS[parts[0]][lang]} - ${VARIABLES[parts[1]][lang]}`;
   return code;
 }
 
@@ -847,7 +849,7 @@ const RANKER_SHORT: Record<string, string> = {
   od: "OD",
   difference: "Diff",
 };
-const VARIABLE_SHORT: Record<string, string> = { prob: "prob", ari: "ari", geo: "geo", sp_ari: "sp·ari", sp_geo: "sp·geo" };
+const VARIABLE_SHORT: Record<string, string> = { prob: "prob", ari: "ari", geo: "geo", sp_ari: "sp-ari", sp_geo: "sp-geo" };
 
 /** Compact label for table headers and chips (full name in methodName). */
 export function methodShort(code: string, lang: Lang): string {
@@ -873,6 +875,14 @@ const LANG_NAMES: Record<string, Text> = {
   fr: { zh: "法语", en: "French" },
   vi: { zh: "越南语", en: "Vietnamese" },
   id: { zh: "印尼语", en: "Indonesian" },
+  "pt-br": { zh: "葡萄牙语（巴西）", en: "Portuguese (Brazil)" },
+  cs: { zh: "捷克语", en: "Czech" },
+  it: { zh: "意大利语", en: "Italian" },
+  hu: { zh: "匈牙利语", en: "Hungarian" },
+  th: { zh: "泰语", en: "Thai" },
+  uk: { zh: "乌克兰语", en: "Ukrainian" },
+  tr: { zh: "土耳其语", en: "Turkish" },
+  pl: { zh: "波兰语", en: "Polish" },
 };
 
 export const langName = (code: string, lang: Lang) => LANG_NAMES[code]?.[lang] ?? code;

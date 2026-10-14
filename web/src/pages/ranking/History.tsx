@@ -117,8 +117,11 @@ export default function History() {
               <thead className="border-b border-line text-left text-xs text-ink-3">
                 <tr>
                   {head("rank", methodName(meta.info.default_method, lang), "w-20")}
-                  <th scope="col" className="w-24 px-3 py-2 text-right font-medium">
+                  <th scope="col" className="w-16 px-3 py-2 text-right font-medium">
                     {t("rank.history.now")}
+                  </th>
+                  <th scope="col" className="w-16 px-3 py-2 text-right font-medium">
+                    {t("rank.history.diff")}
                   </th>
                   <th scope="col" className="px-3 py-2 font-medium">
                     {t("rank.col.title")}
@@ -134,15 +137,8 @@ export default function History() {
                   return (
                     <tr key={r.id} className="border-b border-line last:border-0 hover:bg-surface-2/60">
                       <td className="tabular px-3 py-1.5 text-right font-semibold">{r.rank}</td>
-                      <td className="tabular whitespace-nowrap px-3 py-1.5 text-right text-xs">
-                        {now === null ? (
-                          <span className="text-ink-3">—</span>
-                        ) : (
-                          <>
-                            <span className="text-ink-2">{now}</span> <Delta d={r.rank - now} />
-                          </>
-                        )}
-                      </td>
+                      <td className="tabular px-3 py-1.5 text-right text-xs">{now === null ? <span className="text-ink-3">—</span> : <span className="text-ink-2">{now}</span>}</td>
+                      <td className="tabular whitespace-nowrap px-3 py-1.5 text-right text-xs">{now !== null && <Delta d={r.rank - now} />}</td>
                       <td className="min-w-24 px-3 py-1.5 [overflow-wrap:anywhere]">
                         {r.row ? (
                           <VnLink vn={r.row} released={r.row.released} />

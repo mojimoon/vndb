@@ -167,8 +167,8 @@ many titles does not spoil any one of them.
 Each refresh records, for every ranked VN, its rank under the default method
 (the grand ranking), its VNDB rank, VNDB rating and vote count, as one
 `history_day` row group (~150 KB per day for 8k titles). Kept: every day for
-90 days, then the first recorded day of each week (and of each month) for a
-year, then the first recorded day of each month (`history.keep_days`).
+90 days, then the first recorded day of each week (and the last of each month)
+for a year, then the last recorded day of each month (`history.keep_days`).
 
 `history_day` is the only table a snapshot does not rebuild. The refresh
 fetches it a few days per query, the pipeline adds today and thins it, and the

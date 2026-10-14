@@ -370,6 +370,7 @@ export function RankLines({
   height = 200,
   formatY = (r) => `#${r}`,
   values = false,
+  right,
 }: {
   points: { x: number; ys: (number | null)[] }[];
   names: string[];
@@ -379,6 +380,8 @@ export function RankLines({
   formatY?: (y: number) => string;
   /** Plain values (higher on top) instead of ranks (#1 on top). */
   values?: boolean;
+  /** Plot the last series on its own right-hand axis, labelled with this format (values only). */
+  right?: (y: number) => string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [ref, W] = useWidth();
@@ -387,15 +390,27 @@ export function RankLines({
   const padL = 40;
   const padB = 22;
   const padT = 10;
-  const all = points.flatMap((p) => p.ys.filter((y): y is number => y !== null));
-  const lo = values ? Math.min(...all) : Math.max(1, Math.min(...all));
-  const hi = values ? Math.max(...all, lo + 1e-9) : Math.max(...all, lo + 1);
+  const padR = right ? 44 : 8;
+  const sec = right ? names.length - 1 : -1; // series on the right axis
+  const range = (only: (s: number) => boolean) => {
+    const all = points.flatMap((p) => p.ys.filter((y, s): y is number => y !== null && only(s)));
+    const lo = values ? Math.min(...all) : Math.max(1, Math.min(...all));
+    const hi = values ? Math.max(...all, lo + 1e-9) : Math.max(...all, lo + 1);
+    return [lo, hi];
+  };
+  const [lo, hi] = range((s) => s !== sec);
+  const [lo2, hi2] = right ? range((s) => s === sec) : [lo, hi];
   const x0 = points[0].x;
   const x1 = Math.max(points[points.length - 1].x, x0 + 1);
-  const px = (x: number) => padL + ((W - padL - 8) * (x - x0)) / (x1 - x0);
-  const py = (r: number) => padT + ((H - padB - padT) * (values ? hi - r : r - lo)) / (hi - lo);
+  const px = (x: number) => padL + ((W - padL - padR) * (x - x0)) / (x1 - x0);
+  const scaleY = (lo: number, hi: number) => (r: number) => padT + ((H - padB - padT) * (values ? hi - r : r - lo)) / (hi - lo);
+  const py = scaleY(lo, hi);
+  const py2 = scaleY(lo2, hi2);
+  const ys = (s: number) => (s === sec ? py2 : py);
+  const fmt = (s: number) => (s === sec ? right! : formatY);
   const h = hover !== null ? points[hover] : null;
   const ticks = values ? [lo, (lo + hi) / 2, hi] : [lo, Math.round((lo + hi) / 2), hi];
+  const ticks2 = [lo2, (lo2 + hi2) / 2, hi2];
   return (
     <figure ref={ref as React.RefObject<HTMLElement>} className="space-y-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -404,7 +419,7 @@ export function RankLines({
           {h && (
             <>
               <span className="font-medium text-ink">{formatX(h.x)}</span>
-              {h.ys.map((y, i) => (y === null ? null : <span key={i}> · {names[i]} {formatY(y)}</span>))}
+              {h.ys.map((y, i) => (y === null ? null : <span key={i}> · {names[i]} {fmt(i)(y)}</span>))}
             </>
           )}
         </div>
@@ -412,19 +427,25 @@ export function RankLines({
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
         {ticks.map((r) => (
           <g key={r}>
-            <line x1={padL} x2={W} y1={py(r)} y2={py(r)} stroke="var(--border)" strokeWidth={1} />
+            <line x1={padL} x2={W - padR + 8} y1={py(r)} y2={py(r)} stroke="var(--border)" strokeWidth={1} />
             <text x={padL - 6} y={py(r) + 4} textAnchor="end" fontSize={11} fill="var(--text-2)">
               {formatY(r)}
             </text>
           </g>
         ))}
+        {right &&
+          ticks2.map((r) => (
+            <text key={r} x={W - padR + 6} y={py2(r) + 4} fontSize={11} fill={SERIES[sec]}>
+              {right(r)}
+            </text>
+          ))}
         {hover !== null && <line x1={px(points[hover].x)} x2={px(points[hover].x)} y1={padT} y2={H - padB} stroke="var(--text-3)" strokeWidth={1} />}
         {names.map((_, s) => {
           const pts = points.filter((p) => p.ys[s] !== null);
           return (
             <g key={s}>
-              <polyline points={pts.map((p) => `${px(p.x)},${py(p.ys[s]!)}`).join(" ")} fill="none" stroke={SERIES[s]} strokeWidth={2} />
-              {pts.length <= 15 && pts.map((p) => <circle key={p.x} cx={px(p.x)} cy={py(p.ys[s]!)} r={3} fill={SERIES[s]} stroke="var(--surface)" strokeWidth={2} />)}
+              <polyline points={pts.map((p) => `${px(p.x)},${ys(s)(p.ys[s]!)}`).join(" ")} fill="none" stroke={SERIES[s]} strokeWidth={2} />
+              {pts.length <= 15 && pts.map((p) => <circle key={p.x} cx={px(p.x)} cy={ys(s)(p.ys[s]!)} r={3} fill={SERIES[s]} stroke="var(--surface)" strokeWidth={2} />)}
             </g>
           );
         })}
@@ -436,7 +457,7 @@ export function RankLines({
         <text x={padL} y={H - 6} fontSize={11} fill="var(--text-2)">
           {formatX(points[0].x)}
         </text>
-        <text x={W} y={H - 6} textAnchor="end" fontSize={11} fill="var(--text-2)">
+        <text x={W - padR + 8} y={H - 6} textAnchor="end" fontSize={11} fill="var(--text-2)">
           {formatX(points[points.length - 1].x)}
         </text>
       </svg>

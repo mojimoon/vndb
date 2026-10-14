@@ -7,8 +7,8 @@ and the snapshot only inserts the new day and deletes the days thinned out,
 so a failed fetch can never wipe it (nothing is deleted that was not fetched).
 
 Thinning (``keep_days``): every day for 90 days, then the first recorded day
-of each week (and of each month) for a year, then the first recorded day of
-each month.
+of each week (and the last of each month) for a year, then the last recorded
+day of each month.
 
 The per-VN view (``vn.history``: [[day, rank, vndb_rank, rating, votes], ...])
 is derived from these days on every run, so titles that drop out of the
@@ -72,14 +72,14 @@ def _month(day: int) -> tuple[int, int]:
 
 
 def keep_days(days: list[int] | set[int], today: int) -> set[int]:
-    """Days to keep: all of the last DAILY days, the first day of each week or
-    month within WEEKLY days, the first day of each month before that."""
+    """Days to keep: all of the last DAILY days, the first day of each week and
+    the last day of each month within WEEKLY days, the last day of each month before that."""
     first_week: dict[int, int] = {}
-    first_month: dict[tuple[int, int], int] = {}
+    last_month: dict[tuple[int, int], int] = {}
     for d in sorted(days):
         first_week.setdefault((d + 5) // 7, d)  # weeks start on Monday (day 0 is a Saturday)
-        first_month.setdefault(_month(d), d)
-    weekly, monthly = set(first_week.values()), set(first_month.values())
+        last_month[_month(d)] = d
+    weekly, monthly = set(first_week.values()), set(last_month.values())
     out = set()
     for d in days:
         age = today - d
