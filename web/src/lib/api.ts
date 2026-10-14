@@ -73,6 +73,8 @@ export interface VnDetail extends TitleFields {
   neighbors: { id: number; wins: number; losses: number; common: number }[];
   relations: { id: number; relation: string }[];
   similar: { id: number; sim: number; common: number; wins: number; losses: number }[];
+  /** [tag id, rating 0-3, spoiler 0-2, voters], best rated first; empty before tags were exported. */
+  tags: [tag: number, rating: number, spoiler: number, voters: number][];
 }
 
 /** Exact head-to-head and 10x10 joint distributions of two VNs (by idx). */
@@ -350,6 +352,7 @@ export function useVn(id: number): Loadable<VnDetail> {
         ...v,
         analysis: { ...v.analysis, years: v.analysis?.years ?? [], labels: v.analysis?.labels ?? {} },
         history: v.history ?? [],
+        tags: v.tags ?? [],
         neighbors: expand(v.neighbors, ([nid, wins, losses, common]) => ({ id: nid, wins, losses, common })),
         relations: expand(v.relations, ([rid, relation]) => ({ id: rid, relation })),
         similar: expand(v.similar, ([sid, sim, common, wins, losses]) => ({ id: sid, sim, common, wins: wins ?? 0, losses: losses ?? 0 })),
@@ -357,6 +360,70 @@ export function useVn(id: number): Loadable<VnDetail> {
     };
   }, [raw]);
 }
+/** Tag dictionary (pipeline tags.py). Names are never translated. */
+export interface TagInfo {
+  id: number;
+  name: string;
+  cat: 0 | 1 | 2; // content, sexual, technical
+  df: number; // VNs on VNDB with this tag
+  idf: number; // ln(n_vns / df)
+  idfVotes: number | null; // ln(V / V_t), vote-weighted over ranked VNs
+}
+
+export interface TagDict {
+  nVns: number;
+  byId: Map<number, TagInfo>;
+}
+
+export function useTags(): Loadable<TagDict> {
+  const raw = useApi<{ n_vns: number; tags: [number, string, 0 | 1 | 2, number, number, number | null][] }>("/api/tags");
+  return useMemo<Loadable<TagDict>>(() => {
+    if (raw.state !== "ok") return raw;
+    const byId = new Map(raw.data.tags.map(([id, name, cat, df, idf, idfVotes]) => [id, { id, name, cat, df, idf, idfVotes }]));
+    return { state: "ok", data: { nVns: raw.data.n_vns, byId } };
+  }, [raw]);
+}
+
+/** Tags of every ranked VN by idx: entries offsets[i]..offsets[i+1] (tags.vn_tags_blob). */
+export interface VnTagTable {
+  offsets: Uint32Array;
+  tag: Uint16Array;
+  rating: Float32Array; // 0-3
+  spoiler: Uint8Array;
+}
+
+export function useVnTagTable(enabled: boolean): Loadable<VnTagTable> {
+  const [res, setRes] = useState<Loadable<VnTagTable>>({ state: "loading" });
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    fetchBinary("/api/vntags").then(
+      (buf) => {
+        const view = new DataView(buf);
+        const n = view.getUint32(0, true);
+        const offsets = new Uint32Array(buf.slice(4, 4 + 4 * (n + 1)));
+        const base = 4 + 4 * (n + 1);
+        const m = offsets[n];
+        const tag = new Uint16Array(m);
+        const rating = new Float32Array(m);
+        const spoiler = new Uint8Array(m);
+        for (let k = 0; k < m; k++) {
+          const p = base + 4 * k;
+          tag[k] = view.getUint16(p, true);
+          rating[k] = view.getUint8(p + 2) / 50;
+          spoiler[k] = view.getUint8(p + 3);
+        }
+        if (alive) setRes({ state: "ok", data: { offsets, tag, rating, spoiler } });
+      },
+      (error: Error) => alive && setRes({ state: "error", error }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [enabled]);
+  return res;
+}
+
 export const useUser = (uid: number) => useApi<UserData>(`/api/user/${uid}`);
 
 /** One VN's voters with the attributes the ratings filters need (see /api/voters). */

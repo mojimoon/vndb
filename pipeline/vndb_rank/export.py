@@ -49,7 +49,8 @@ SCHEMA: dict[str, str] = {
   relations    TEXT    NOT NULL,      -- JSON [[vid, relation], ...]
   analysis     TEXT    NOT NULL,      -- JSON, see analysis.py
   similar      TEXT    NOT NULL,      -- JSON [[vid, similarity, common, wins, losses], ...]
-  history      TEXT    NOT NULL       -- JSON [[day, rank, vndb_rank], ...], day = days since 2000-01-01
+  history      TEXT    NOT NULL,      -- JSON [[day, rank, vndb_rank], ...], day = days since 2000-01-01
+  tags         TEXT    NOT NULL       -- JSON [[tag, rating, spoiler 0-2, voters], ...], see tags.py
 """,
     "producer": """
   id     INTEGER PRIMARY KEY,
@@ -101,7 +102,7 @@ SCHEMA: dict[str, str] = {
 VN_COLUMNS = [
     "id", "idx", "title", "latin", "title_ja", "title_zh", "title_en", "olang", "released", "dev_id",
     "image", "image_sexual", "image_violence", "length", "votes", "rating", "average", "search", "trend",
-    "ranks", "neighbors", "relations", "analysis", "similar", "history",
+    "ranks", "neighbors", "relations", "analysis", "similar", "history", "tags",
 ]
 
 

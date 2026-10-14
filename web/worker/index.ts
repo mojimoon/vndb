@@ -188,6 +188,21 @@ app.get("/api/meta", (c) =>
 // GET /api/catalogue -> {columns, rows}: display fields of every ranked VN (prebuilt, ~25 rows read).
 app.get("/api/catalogue", (c) => cached(c, () => doc(c.env.DB, "catalogue")));
 
+// GET /api/tags -> tag dictionary {n_vns, tags: [[id, name, cat, df, idf, idf_votes], ...]} (tags.py)
+app.get("/api/tags", (c) => cached(c, () => doc(c.env.DB, "tags")));
+
+// GET /api/vntags -> binary tags of every ranked VN (tags.vn_tags_blob), for user tag analysis.
+app.get("/api/vntags", (c) =>
+  cached(c, async () => {
+    const b64 = await doc(c.env.DB, "vntags");
+    if (b64 === null) return null;
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }),
+);
+
 // GET /api/ranks?m=<method> -> {method, ranks: [[id, rank, score], ...]} (prebuilt).
 app.get("/api/ranks", async (c) => {
   const m = c.get("meta");
@@ -206,7 +221,7 @@ app.get("/api/vn/:id{[0-9]+}", (c) =>
       .first<Record<string, unknown>>();
     if (!vn) return null;
     delete vn.search;
-    const raw = new Set(["ranks", "neighbors", "relations", "analysis", "similar", "history"]);
+    const raw = new Set(["ranks", "neighbors", "relations", "analysis", "similar", "history", "tags"]);
     // JSON columns are spliced in verbatim instead of parsed and re-serialized.
     return `{${Object.entries(vn)
       .map(([k, v]) => `${JSON.stringify(k)}:${raw.has(k) ? v : JSON.stringify(v)}`)

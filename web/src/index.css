@@ -25,6 +25,11 @@
   --seq-0: #cde2fb;
   --seq-1: #104281;
   --diag: #6e6d68;
+  --sig-0: #8b8f96;
+  --sig-1: #128a6e;
+  --sig-2: #1f6fd1;
+  --sig-3: #8a2bc2;
+  --spoil-minor: #b98000;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -50,6 +55,11 @@
     --seq-0: #1f2a38;
     --seq-1: #86b6ef;
     --diag: #a9a89f;
+    --sig-0: #8e9299;
+    --sig-1: #35c49a;
+    --sig-2: #5ea8ff;
+    --sig-3: #d08bff;
+    --spoil-minor: #f2c94c;
   }
 }
 :root[data-theme="dark"] {
@@ -75,6 +85,11 @@
   --seq-0: #1f2a38;
   --seq-1: #86b6ef;
   --diag: #a9a89f;
+  --sig-0: #8e9299;
+  --sig-1: #35c49a;
+  --sig-2: #5ea8ff;
+  --sig-3: #d08bff;
+  --spoil-minor: #f2c94c;
 }
 
 @theme inline {
@@ -90,6 +105,7 @@
   --color-accent-soft: var(--accent-soft);
   --color-up: var(--up);
   --color-down: var(--down);
+  --color-spoil-minor: var(--spoil-minor);
   --font-sans: "Inter", "Noto Sans SC", "Noto Sans JP", system-ui, -apple-system, "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif;
 }
 

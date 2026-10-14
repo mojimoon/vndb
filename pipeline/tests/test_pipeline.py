@@ -1,4 +1,5 @@
 import json
+import math
 import sqlite3
 from itertools import combinations
 from pathlib import Path
@@ -316,3 +317,43 @@ def test_text_parts_split_on_utf8_boundaries():
     s = "天" * (PART_TEXT_BYTES // 2) + "abc"
     parts = list(text_parts(s))
     assert "".join(parts) == s and all(len(p.encode()) <= PART_TEXT_BYTES for p in parts)
+
+
+def test_tags(snapshot, tmp_path):
+    import base64
+    import struct
+    sql, _, db = snapshot
+    dump = sql.parent.parent / "dump" / "db"
+    # Recompute VNDB-style ratings from the raw votes.
+    votes: dict[tuple[int, int], list[int]] = {}
+    for line in (dump / "tags_vn").read_text().splitlines():
+        _, tag, vid, _, vote, _, ignore, _, _ = line.split("\t")
+        if ignore != "t":
+            votes.setdefault((int(vid[1:]), int(tag[1:])), []).append(int(vote))
+    doc = _doc(db, "tags")
+    meta = {t[0]: t for t in doc["tags"]}
+    assert 12 not in meta  # not searchable
+    seen = 0
+    for vid, idx, raw in db.execute("SELECT id, idx, tags FROM vn"):
+        tags = json.loads(raw)
+        for tag, rating, spoiler, voters in tags:
+            v = votes[(vid, tag)]
+            assert rating == round(sum(v) / len(v), 2) > 0 and voters == len(v) and spoiler in (0, 1, 2)
+            seen += 1
+        expected = sorted(t for (x, t), v in votes.items() if x == vid and t != 12 and sum(v) > 0)
+        assert sorted(t[0] for t in tags) == expected
+        assert [t[1] for t in tags] == sorted((t[1] for t in tags), reverse=True)
+    assert seen
+    for t in meta.values():
+        assert t[3] > 0 and abs(t[4] - math.log(doc["n_vns"] / t[3])) < 1e-3
+    # Binary doc: same tags per VN idx.
+    raw = base64.b64decode("".join(r[0] for r in db.execute("SELECT data FROM doc WHERE key='vntags' ORDER BY part")))
+    (n,) = struct.unpack_from("<I", raw)
+    offs = struct.unpack_from(f"<{n + 1}I", raw, 4)
+    base = 4 + 4 * (n + 1)
+    by_idx = {idx: json.loads(t) for idx, t in db.execute("SELECT idx, tags FROM vn")}
+    for i in range(n):
+        ents = [struct.unpack_from("<HBB", raw, base + 4 * k) for k in range(offs[i], offs[i + 1])]
+        want = sorted((t, r * 50, s) for t, r, s, _ in by_idx[i])
+        assert [(t, s) for t, _, s in want] == [(t, s) for t, _, s in sorted(ents)]
+        assert all(abs(a[1] - b[1]) <= 1 for a, b in zip(want, sorted(ents)))
