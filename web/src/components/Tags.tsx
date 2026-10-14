@@ -46,7 +46,7 @@ export function TagCloud({ rows }: { rows: TagRow[] }) {
   const frac = (s: number) => (hi > lo ? Math.sqrt((s - lo) / (hi - lo)) : 1);
   const words = [...top].sort((a, b) => a.name.localeCompare(b.name));
   return (
-    <ul className="flex flex-wrap items-baseline justify-center gap-x-4 gap-y-1.5 py-2" lang="en">
+    <ul className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 py-2 [--cloud:0.7] sm:gap-x-4 sm:gap-y-1.5 sm:[--cloud:1]" lang="en">
       {words.map((r) => {
         const f = frac(r.score);
         return (
@@ -58,7 +58,7 @@ export function TagCloud({ rows }: { rows: TagRow[] }) {
               title={`${r.name} · ${t("tags.col.score")} ${r.score.toFixed(2)}`}
               className="leading-tight hover:text-accent-ink hover:underline"
               style={{
-                fontSize: `${(0.8 + f * 1.15).toFixed(2)}rem`,
+                fontSize: `calc(${(0.8 + f * 1.15).toFixed(2)}rem * var(--cloud))`,
                 fontWeight: f > 0.6 ? 600 : f > 0.3 ? 500 : 400,
                 color: `color-mix(in oklab, var(--accent-ink) ${Math.round(35 + f * 65)}%, var(--text-2))`,
               }}

@@ -894,7 +894,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       setLang,
       t: (key, vars) => {
         let s: string = STRINGS[lang][key] ?? key;
-        if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
+        if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v));
         return s;
       },
     }),
