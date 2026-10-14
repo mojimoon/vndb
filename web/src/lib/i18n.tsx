@@ -65,8 +65,8 @@ const STRINGS = {
     "vn.h2h.row": "{w} 胜 · {t} 平 · {l} 负（共 {n} 人）",
     "vn.relations": "关联作品",
     "vn.showCover": "显示封面",
-    "vn.nsfwCover": "封面可能含有性暗示或暴力内容",
-    "vn.blockedCover": "封面含有露骨或血腥内容，本站不显示",
+    "vn.nsfwCover": "封面可能含有敏感内容，再次点击显示",
+    "vn.blockedCover": "封面含有敏感内容，本站不显示",
     "vn.unranked": "未排名",
     "methods.title": "排名方法",
     "methods.params": "参数",
@@ -357,8 +357,8 @@ const STRINGS = {
     "vn.h2h.row": "{w} wins · {t} ties · {l} losses (of {n})",
     "vn.relations": "Related",
     "vn.showCover": "Show cover",
-    "vn.nsfwCover": "Cover may be suggestive or violent",
-    "vn.blockedCover": "Cover is explicit or brutal and is not shown here",
+    "vn.nsfwCover": "Cover may contain sensitive content; click again to show",
+    "vn.blockedCover": "Cover contains sensitive content; not shown here",
     "vn.unranked": "unranked",
     "methods.title": "Ranking methods",
     "methods.params": "Parameters",
@@ -654,8 +654,8 @@ const MERGED: Record<string, { name: Text; desc: Text }> = {
   borda_grand: {
     name: { zh: "综合排名", en: "Grand ranking" },
     desc: {
-      zh: "对 9 种排名做 Borda 计数：Massey 与差值法（百分位）、Colley（偏好人数 / 百分位）、Bradley–Terry 和 Elo。它们在把评分者随机分成两半、剔除热门程度的影响后，两半结果最一致；差值法让排名靠前的作品有足够的评分支撑。得分可换算为平均名次 ≈ 作品数 − 得分 / 9。",
-      en: "Borda count over 9 rankings: Massey and Difference on percentiles, Colley (preference counts / percentiles), Bradley–Terry and Elo. They agree best between two random halves of the voters once popularity is factored out; Difference keeps thinly voted titles from taking over the top. Average rank across them ≈ titles − score / 9.",
+      zh: "对 9 种排名做 Borda 计数：Massey 与差值法（百分位）、Colley（偏好人数 / 百分位）、Bradley–Terry 和 Elo。它们在把评分者随机分成两半、剔除热门程度的影响后，两半结果最一致；差值法让排名靠前的作品有足够的评分支撑。",
+      en: "Borda count over 9 rankings: Massey and Difference on percentiles, Colley (preference counts / percentiles), Bradley–Terry and Elo. They agree best between two random halves of the voters once popularity is factored out; Difference keeps thinly voted titles from taking over the top.",
     },
   },
   borda_sci: {
