@@ -6,11 +6,18 @@ import { useRanking } from "./RankingLayout";
 import { Delta } from "./RankTable";
 import type { Row } from "./data";
 
+/** Only titles in the default method's top 200 now or 30 days ago. */
+const TOP = 200;
+
 export default function Movers() {
   const { t, lang } = useI18n();
   const { filtered, meta } = useRanking();
   const [up, down] = useMemo(() => {
-    const withTrend = filtered.filter((r) => r.trend !== null && r.trend !== 0);
+    const withTrend = filtered.filter((r) => {
+      if (r.trend === null || r.trend === 0) return false;
+      const now = r.sci_rank ?? r.rank; // trend follows the default method
+      return Math.min(now, now + r.trend) <= TOP;
+    });
     return [
       [...withTrend].filter((r) => r.trend! > 0).sort((a, b) => b.trend! - a.trend!),
       [...withTrend].filter((r) => r.trend! < 0).sort((a, b) => a.trend! - b.trend!),
@@ -19,7 +26,7 @@ export default function Movers() {
   if (!up.length && !down.length) return <p className="rounded-lg border border-line bg-surface p-6 text-sm text-ink-2">{t("rank.movers.none")}</p>;
   return (
     <div className="space-y-3">
-      <p className="text-sm text-ink-2">{methodName(meta.info.default_method, lang)} · 7d</p>
+      <p className="text-sm text-ink-2">{methodName(meta.info.default_method, lang)} · 30d · Top {TOP}</p>
       <div className="grid gap-4 lg:grid-cols-2">
         <MoverList title={t("rank.movers.up")} rows={up} />
         <MoverList title={t("rank.movers.down")} rows={down} />

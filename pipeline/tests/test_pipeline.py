@@ -247,7 +247,8 @@ def test_storage_helpers():
     assert merged[-1] == [today, 1, 2]
     assert len([p for p in merged if today - p[0] <= 90]) == 91
     assert all(today - p[0] <= 730 for p in merged)
-    assert rank_trend([[today - 8, 10, 0], [today, 4, 0]], today) == 6
+    assert rank_trend([[today - 31, 10, 0], [today - 8, 7, 0], [today, 4, 0]], today) == 6
+    assert rank_trend([[today - 8, 10, 0], [today, 4, 0]], today) is None
 
 
 def _doc(db, key):

@@ -5,19 +5,20 @@ import { useShowMore } from "../../components/ShowMore";
 import { useRanking } from "./RankingLayout";
 import type { Row } from "./data";
 
-const TOP = 500;
+const TOP = 500; // underrated: within the current method's top 500
+const TOP_OVER = 200; // overrated: within VNDB's top 200
 
 export default function Disputes() {
   const { t } = useI18n();
   const { filtered } = useRanking();
   const [under, over] = useMemo(() => {
     const u = filtered.filter((r) => r.rank <= TOP).sort((a, b) => b.vndb_rank - b.rank - (a.vndb_rank - a.rank));
-    const o = filtered.filter((r) => r.vndb_rank <= TOP).sort((a, b) => b.rank - b.vndb_rank - (a.rank - a.vndb_rank));
+    const o = filtered.filter((r) => r.vndb_rank <= TOP_OVER).sort((a, b) => b.rank - b.vndb_rank - (a.rank - a.vndb_rank));
     return [u.filter((r) => r.vndb_rank > r.rank), o.filter((r) => r.rank > r.vndb_rank)];
   }, [filtered]);
   return (
     <div className="space-y-3">
-      <p className="text-sm text-ink-2">{t("rank.disputes.hint", { n: TOP })}</p>
+      <p className="text-sm text-ink-2">{t("rank.disputes.hint", { n: TOP, m: TOP_OVER })}</p>
       <div className="grid gap-4 lg:grid-cols-2">
         <DisputeList title={t("rank.disputes.under")} rows={under} />
         <DisputeList title={t("rank.disputes.over")} rows={over} />

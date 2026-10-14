@@ -43,7 +43,7 @@ SCHEMA: dict[str, str] = {
   rating       REAL,                  -- VNDB Bayesian rating, 1-10
   average      REAL,
   search       TEXT    NOT NULL,
-  trend        INTEGER,               -- rank change of the default method over ~7 days
+  trend        INTEGER,               -- rank change of the default method over ~30 days
   ranks        TEXT    NOT NULL,      -- JSON {method: [rank, score]}
   neighbors    TEXT    NOT NULL,      -- JSON [[vid, wins, losses, common], ...]
   relations    TEXT    NOT NULL,      -- JSON [[vid, relation], ...]
