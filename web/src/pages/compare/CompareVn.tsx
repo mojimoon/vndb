@@ -175,7 +175,7 @@ function View({ x, y, featured }: { x: VnDetail; y: VnDetail; featured: string[]
 /** joint[a][b] -> rows = B (y axis), columns = A (x axis). */
 const transpose = (m: number[][]) => m[0].map((_, c) => m.map((row) => row[c]));
 
-/** Votes of 7 or more count as high (the 6.95 boundary on VNDB's 1-10 scale). */
+/** Votes of 7 or more count as high. */
 const HIGH = 70;
 const GROUPS = ["hh", "hl", "lh", "ll", "none"] as const;
 type Group = (typeof GROUPS)[number];
@@ -190,14 +190,36 @@ function BothReviews({ x, y, tx, ty }: { x: VnDetail; y: VnDetail; tx: string; t
   const pairs = res.state === "ok" ? res.data.pairs : [];
   const groups = Object.fromEntries(GROUPS.map((g) => [g, pairs.filter((p) => groupOf(p) === g)])) as Record<Group, NotePair[]>;
   const group = pick ?? GROUPS.find((g) => groups[g].length) ?? "hh";
-  const chip = (g: Group) =>
-    g === "none" ? (
-      t("compare.noVote")
-    ) : (
-      <>
-        <Swatch i={0} /> {t(g[0] === "h" ? "compare.high" : "compare.low")} · <Swatch i={1} /> {t(g[1] === "h" ? "compare.high" : "compare.low")}
-      </>
-    );
+  // const chip = (g: Group) =>
+  //   g === "none" ? (
+  //     t("compare.noVote")
+  //   ) : (
+  //     <>
+  //       <Swatch i={0} /> {t(g[0] === "h" ? "compare.high" : "compare.low")} · <Swatch i={1} /> {t(g[1] === "h" ? "compare.high" : "compare.low")}
+  //     </>
+  //   );
+  const chip = (g: Group) => {
+    switch (g) {
+      case "hh":
+        return t("compare.bothHigh");
+      case "hl":
+        return (
+          <>
+            <Swatch i={0} /> {t("compare.high")} · <Swatch i={1} /> {t("compare.low")}
+          </>
+        );
+      case "lh":
+        return (
+          <>
+            <Swatch i={0} /> {t("compare.low")} · <Swatch i={1} /> {t("compare.high")}
+          </>
+        );
+      case "ll":
+        return t("compare.bothLow");
+      case "none":
+        return t("compare.noVote");
+    }
+  };
   const title = (
     <span className="inline-flex items-center gap-1.5">
       {t("compare.both")} · {chip(group)}
