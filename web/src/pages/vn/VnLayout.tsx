@@ -52,7 +52,7 @@ function Header({ vn, item }: { vn: VnDetail; item?: CatalogueItem }) {
     [t("rank.olang"), vn.olang ? langName(vn.olang, lang) : "—"],
     [t("vn.votes"), formatInt(vn.votes)],
     [t("vn.rating"), vn.rating?.toFixed(2) ?? "—"],
-    [t("rank.col.length"), vn.length ? t(`length.${vn.length}` as never) : "—"],
+    [t("vn.vndbRank"), item ? `#${formatInt(item.vndb_rank)}` : "—"],
   ];
   return (
     <header className="flex flex-col gap-5 sm:flex-row">
@@ -60,11 +60,11 @@ function Header({ vn, item }: { vn: VnDetail; item?: CatalogueItem }) {
       <div className="min-w-0 flex-1">
         <h1 className="text-2xl font-semibold tracking-tight">{main}</h1>
         {sub && <p className="mt-1 text-ink-2">{sub}</p>}
-        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
           {facts.map(([k, v]) => (
             <div key={k}>
-              <dt className="text-xs text-ink-3">{k}</dt>
-              <dd className="tabular">{v}</dd>
+              <dt className="text-xs font-medium uppercase tracking-wide text-ink-3">{k}</dt>
+              <dd className="tabular mt-0.5 text-base font-semibold">{v}</dd>
             </div>
           ))}
         </dl>
