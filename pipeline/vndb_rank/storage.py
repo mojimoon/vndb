@@ -208,7 +208,7 @@ def merge_history(prev: list | None, today: int, ranks: list[int]) -> list[list[
     return out
 
 
-def rank_trend(history: list[list[int]], today: int, days: int = 7) -> int | None:
+def rank_trend(history: list[list[int]], today: int, days: int = 30) -> int | None:
     """Change of the first tracked rank vs. the closest point at least `days` ago
     (positive = moved up)."""
     old = [p for p in history if today - p[0] >= days]

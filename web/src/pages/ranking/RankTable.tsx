@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { devName, formatInt, formatScore, titles, year } from "../../lib/format";
 import { langName, methodName, methodShort, useI18n, type StringKey } from "../../lib/i18n";
@@ -57,7 +57,35 @@ function sortValue(r: Row, key: string): number {
   }
 }
 
+/**
+ * Keeps the header row in view. When the table fits the page width it sticks
+ * below the site header; when it needs a horizontal scroll (narrow screens,
+ * many columns) the scroll box breaks page-level sticking, so the table gets
+ * its own viewport-high scroll box and the header sticks to the top of that.
+ */
+function useStickyHeader() {
+  const box = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState({ fits: true, top: 0 });
+  useLayoutEffect(() => {
+    const el = box.current;
+    const table = el?.querySelector("table");
+    if (!el || !table) return;
+    const measure = () => {
+      const fits = table.scrollWidth <= el.clientWidth + 1;
+      const top = document.querySelector("header")?.offsetHeight ?? 0;
+      setState((s) => (s.fits === fits && s.top === top ? s : { fits, top }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    ro.observe(table);
+    return () => ro.disconnect();
+  }, []);
+  return { box, ...state };
+}
+
 export default function RankTable() {
+  const sticky = useStickyHeader();
   const { t, lang } = useI18n();
   const { meta, method, extras, filtered, params, update } = useRanking();
   const [cols, setColsState] = useState<Col[]>(loadCols);
@@ -164,9 +192,9 @@ export default function RankTable() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+      <div ref={sticky.box} className={`rounded-lg border border-line bg-surface ${sticky.fits ? "overflow-clip" : "max-h-[calc(100dvh-5rem)] overflow-auto"}`}>
         <table className="w-full text-sm">
-          <thead className="whitespace-nowrap border-b border-line text-left text-xs text-ink-3">
+          <thead style={{ top: sticky.fits ? sticky.top : 0 }} className="sticky z-10 whitespace-nowrap bg-surface text-left text-xs text-ink-3 shadow-[inset_0_-1px_0_var(--border)]">
             <tr>
               <Th k="rank" className="w-12 text-right sm:w-16" title={methodName(method, lang)}>
                 {t("rank.col.rank")}
@@ -220,7 +248,7 @@ export default function RankTable() {
                   {has("trend") && <td className="hidden px-3 py-2.5 text-right text-xs sm:table-cell">{r.trend === null ? <span className="text-ink-3">–</span> : <Delta d={r.trend} />}</td>}
                   <td className="px-3 py-2.5">
                     {/* Long titles wrap within ~24rem instead of stretching the table. */}
-                    <div className="w-max min-w-40 max-w-[16rem] break-words sm:max-w-sm">
+                    <div className="min-w-24 max-w-[16rem] [overflow-wrap:anywhere] sm:w-max sm:min-w-40 sm:max-w-sm">
                       <Link to={`/vn/${r.id}`} className="font-medium text-ink hover:text-accent-ink">
                         {main}
                       </Link>
