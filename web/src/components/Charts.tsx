@@ -475,15 +475,14 @@ export function PairedBars({ x, a, b, names, label }: { x: string[]; a: number[]
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
   return (
     <figure ref={ref as React.RefObject<HTMLElement>} className="space-y-1">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Legend items={names} />
-        <div className="h-5 text-xs text-ink-2 tabular" aria-live="polite">
-          {hover !== null && (
-            <>
-              <span className="font-medium text-ink">{x[hover]}</span> · {names[0]} {pct(sa[hover])} · {names[1]} {pct(sb[hover])}
-            </>
-          )}
-        </div>
+      <Legend items={names} />
+      {/* Fixed one-line slot: long titles are truncated instead of wrapping, so hovering never changes the height. */}
+      <div className="h-5 truncate text-xs text-ink-2 tabular" aria-live="polite">
+        {hover !== null && (
+          <>
+            <span className="font-medium text-ink">{x[hover]}</span> · {names[0]} {pct(sa[hover])} · {names[1]} {pct(sb[hover])}
+          </>
+        )}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
         <YAxis ticks={ticks} y={yOf} x={padL} width={W} format={(v) => `${+(v * 100).toFixed(1)}%`} />

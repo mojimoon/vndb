@@ -305,8 +305,9 @@ def test_notes_and_leaderboards(snapshot):
     assert 0 < len(users) <= len(rows) and all(len(r) == 7 for r in users)
     lb = json.loads(db.execute("SELECT value FROM meta WHERE key='leaderboards'").fetchone()[0])
     assert lb["most_votes"][0][2] >= lb["most_votes"][-1][2]
-    assert lb["highest_mean"][0][2] >= lb["lowest_mean"][0][2]
-    assert all(e[3] >= lb["min_votes"] for e in lb["highest_mean"])
+    top = lb["most_reviews"][0]
+    assert top[2] == sum(r[1] == top[0] for r in rows)  # same notes as the review lists
+    assert all(a[2] >= b[2] for a, b in zip(lb["most_reviews"], lb["most_reviews"][1:]))
     assert lb["most_mainstream"][0][2] >= lb["most_contrarian"][0][2]
 
 
