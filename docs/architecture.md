@@ -13,7 +13,7 @@ instance's storage.
 ```
 dl.vndb.org dump (daily, ~08:00 UTC)
   └─ GitHub Actions refresh.yml (12:07 UTC)
-       ├─ extract 10 tables from the 190 MB .tar.zst
+       ├─ extract 14 tables from the 190 MB .tar.zst
        ├─ fetch yesterday's rank history from D1 (`SELECT id, history FROM vn`)
        ├─ pipeline/ (python -m vndb_rank, ~10 min)
        │    extract.py    catalogue (VNs with >= 30 votes), users, one streaming pass over ulist_vns
@@ -21,6 +21,7 @@ dl.vndb.org dump (daily, ~08:00 UTC)
        │    pairs.py      N x N pair counts + mean votes / sample percentiles
        │    methods.py    7 PONet, 24 rankit, 8 Borda methods + VNDB reference
        │    leaderboards.py user leaderboards
+       │    tags.py       VNDB-style tag ratings, document frequencies, IDF
        │    neighbors.py  per-VN head-to-head opponents
        │    cf.py         similar users, recommendations, similar VNs
        │    storage.py    voter blobs, user / note shards, text parts, history
@@ -61,7 +62,7 @@ Numbers from the 2026-10-06 dump:
 | --- | --- | --- |
 | `vn` | 7,945 | one VN: display fields + JSON columns `ranks`, `analysis`, `neighbors`, `similar`, `relations`, `history` |
 | `producer` | 2,410 | one developer |
-| `doc` | ~190 | a prebuilt API response split into ≤ 80 KB parts: `catalogue` (columnar) and `ranks:<method>` |
+| `doc` | ~190 | a prebuilt API response split into ≤ 80 KB parts: `catalogue` (columnar), `ranks:<method>`, `tags` (tag dictionary) and `vntags` (base64 tags of every ranked VN) |
 | `vn_voters` | ~1.6k | voters of the VNs with `idx % 1024 == shard`: segments `(idx u16, n u32)` + n × 13-byte records sorted by uid: `uid u32, vote u8, sample percentile ×200 u8, list labels u8, year−1990 u8, the user's vote count u16, the user's mean vote u8, r vs VNDB ×100 i8, r vs SciRanking ×100 i8` (`storage.VOTER_DTYPE`) |
 | `vn_notes` | ~700 | JSON `[[idx, uid, name, vote, date, text, has_page, labels, user_votes, sp%], ...]` for `idx % 512 == shard`, newest first |
 | `user_notes` | ~1.3k | JSON `[[uid, idx, vote, date, text, labels, sp%], ...]` for `uid % 1024 == shard` |
@@ -128,6 +129,28 @@ There is no perfect rule: a Latin-script title with several Chinese aliases
 tame, 1 suggestive / violent, 2 explicit / brutal); the level is the rounded
 mean. Covers at level 1 (and unflagged ones) are blurred until clicked; covers
 at level 2 are never loaded, a placeholder links to VNDB instead.
+
+### Tags
+
+`tags.py` reads `tags` and `tags_vn` and rates each VN's tags as VNDB does:
+the mean of the non-ignored votes (-3..3), kept when above 0; the spoiler
+level is the mean spoiler vote bucketed at > 0.4 (minor) and > 1.3 (major), the
+tag's default when nobody voted on it, and major for tags marked as a lie.
+Only searchable tags are kept. Names are shown as on VNDB (never translated).
+
+* Title page (`vn.tags` column): score = significance × ln(N / df), N = VNs
+  with any tag, df = VNs carrying the tag, both over all of VNDB.
+* User page: computed in the browser from the user's votes and `/api/vntags`
+  (one cached ~2 MB binary of every ranked VN's tags: u32 n, u32 offsets,
+  then tag u16 / rating × 50 u8 / spoiler u8). TF = the tag's significance
+  summed over the user's voted titles ÷ their number of votes; IDF is
+  vote-weighted, ln(V / V_t), V = votes on ranked titles and V_t = votes on
+  those carrying the tag, so tags that nearly every list contains weigh
+  little. Storing per-user tag profiles instead would have cost ~90 MB for
+  56k users.
+
+The cloud shows the top 60 content tags without spoilers, sized by score; the
+table defaults to VNDB's view (content + technical, no spoilers).
 
 ### Voter filters
 

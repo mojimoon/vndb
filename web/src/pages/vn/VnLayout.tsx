@@ -34,6 +34,7 @@ export default function VnLayout() {
           { path: "ranks", label: t("vn.tab.ranks") },
           { path: "versus", label: t("vn.tab.versus") },
           { path: "similar", label: t("vn.tab.similar") },
+          ...(v.tags.length ? [{ path: "tags", label: t("tags.tab") }] : []),
           { path: "notes", label: `${t("vn.tab.notes")}${v.analysis.notes ? ` (${v.analysis.notes})` : ""}` },
         ]}
       />

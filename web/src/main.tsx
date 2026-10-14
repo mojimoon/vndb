@@ -11,6 +11,8 @@ import RankTable from "./pages/ranking/RankTable";
 import Years from "./pages/ranking/Years";
 import Disputes from "./pages/ranking/Disputes";
 import Movers from "./pages/ranking/Movers";
+import VnTags from "./pages/vn/Tags";
+import UserTags from "./pages/user/Tags";
 import VnLayout from "./pages/vn/VnLayout";
 import VnOverview from "./pages/vn/Overview";
 import VnRatings from "./pages/vn/Ratings";
@@ -61,6 +63,7 @@ const router = createBrowserRouter([
           { path: "versus", element: <VnVersus /> },
           { path: "similar", element: <VnSimilar /> },
           { path: "notes", element: <VnNotes /> },
+          { path: "tags", element: <VnTags /> },
         ],
       },
       { path: "user", element: <UserSearch /> },
@@ -73,6 +76,7 @@ const router = createBrowserRouter([
           { path: "recs", element: <UserRecs /> },
           { path: "similar", element: <UserSimilar /> },
           { path: "notes", element: <UserNotes /> },
+          { path: "tags", element: <UserTags /> },
         ],
       },
       { path: "dev", element: <DevList /> },

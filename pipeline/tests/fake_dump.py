@@ -104,6 +104,16 @@ def make_fake_dump(out: Path, n_vns: int = 300, n_users: int = 2000, seed: int =
     _write(db, "producers", ["id", "type", "lang", "name", "latin", "alias", "description"], [
         [f"p{p}", "co", "ja", f"Studio {''.join(rng.choice(KANA, 2))}", f"Studio {p}", "\\N", "\\N"] for p in range(1, n_prod + 1)
     ])
+    # Tags: 12 tags (incl. one unsearchable and one sexual / technical), each VN gets a few votes.
+    tag_rows = [[f"g{t}", ["cont", "ero", "tech"][t % 3], str(int(t == 5)), "f" if t == 12 else "t", "t", f"Tag {t}", "\\N", "\\N"] for t in range(1, 13)]
+    tv_rows = []
+    for v in range(1, n_vns + 1):
+        for t in rng.choice(np.arange(1, 13), size=rng.integers(0, 6), replace=False):
+            for u in rng.choice(np.arange(1, 50), size=rng.integers(1, 4), replace=False):
+                tv_rows.append(["2020-01-01", f"g{t}", f"v{v}", f"u{u}", str(rng.choice([-3, -1, 1, 2, 3, 3])),
+                                rng.choice(["\\N", "0", "1", "2"]), "t" if rng.random() < 0.02 else "f", rng.choice(["\\N", "f"]), ""])
+    _write(db, "tags", ["id", "cat", "defaultspoil", "searchable", "applicable", "name", "alias", "description"], tag_rows)
+    _write(db, "tags_vn", ["date", "tag", "vid", "uid", "vote", "spoiler", "ignore", "lie", "notes"], tv_rows)
     _write(db, "users", ["id", "ign_votes", "perm_imgvote", "perm_tag", "perm_lengthvote", "username"],
            [[f"u{u}", "f", "t", "t", "t", f"user{u}"] for u in range(1, n_users + 1)])
     return out

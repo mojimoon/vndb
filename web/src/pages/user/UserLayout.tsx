@@ -100,6 +100,7 @@ export default function UserLayout() {
           { path: "votes", label: `${t("user.tab.votes")} (${ctx.votes.length})` },
           { path: "recs", label: t("user.tab.recs") },
           { path: "similar", label: t("user.tab.similar") },
+          { path: "tags", label: t("tags.tab") },
           { path: "notes", label: t("vn.tab.notes") },
         ]}
       />

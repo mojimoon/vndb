@@ -24,6 +24,7 @@ from .methods import GRAND_INPUTS, compute_all
 from .neighbors import build_neighbors
 from .pairs import build_pairs
 from .leaderboards import build_leaderboards
+from .tags import load_tags, tags_doc, vn_tag_json, vn_tags_blob, vote_idf
 from .storage import (
     USER_NOTE_SHARDS, VN_NOTE_SHARDS, day_number, merge_history, name_shards, note_shards,
     rank_trend, text_parts, user_shards, voter_records, voter_shards,
@@ -100,6 +101,8 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
     date = dump.snapshot_date()
     votes, stats, vn_labels, extras = load_votes(dump, cat, ignored, year=int(date[:4]), with_notes=not cfg.skip_notes)
     sp = per_user_percentiles(votes)
+    tags = load_tags(dump)
+    votes_per_vn = np.bincount(votes.vidx, minlength=n)
 
     analysis = build_analysis(votes, n, vn_labels, sp, per_user_means(votes))
     pairs = build_pairs(votes, n, cfg.min_common_vote)
@@ -195,6 +198,7 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
         "analysis": [compact_json(a) for a in analysis],
         "similar": [compact_json([[int(ids[j]), s, c, w, l] for j, s, c, w, l in sims]) for sims in item_sims],
         "history": [compact_json(h) for h in history],
+        "tags": [compact_json(t) for t in vn_tag_json(tags, ids)],
     }
     # Prebuilt API payloads, served by the worker without parsing.
     vndb_rank = ranks["vndb"].to_numpy()
@@ -218,6 +222,9 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
         order = np.lexsort((ids, ranks[m].to_numpy()))
         sc = scores[m].to_numpy(dtype=np.float64)
         docs[f"ranks:{m}"] = compact_json({"method": m, "ranks": [[int(ids[j]), int(ranks[m].iloc[j]), _num(sc[j])] for j in order]})
+    if tags is not None:
+        docs["tags"] = compact_json(tags_doc(tags, vote_idf(tags, ids, votes_per_vn)))
+        docs["vntags"] = vn_tags_blob(tags, ids)
     doc_rows = [[k, part, piece] for k, text in docs.items() for part, piece in enumerate(text_parts(text))]
 
     tables = {
