@@ -9,7 +9,8 @@ export function titles(v: TitleFields, lang: Lang): { main: string; sub: string 
       : lang === "ja"
         ? v.title_ja ?? v.title
         : v.title_en ?? v.latin ?? v.title;
-  const sub = v.title !== main ? v.title : v.latin && v.latin !== main ? v.latin : null;
+  // Japanese UI: no romanization; the original title only when it isn't the one shown.
+  const sub = v.title !== main ? v.title : lang !== "ja" && v.latin && v.latin !== main ? v.latin : null;
   return { main, sub };
 }
 

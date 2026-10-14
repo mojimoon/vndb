@@ -42,7 +42,7 @@ export default function DevPage() {
             /
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">{name(d)}</h1>
-          {d.name && d.latin && <p className="text-ink-2">{lang === "en" ? d.name : d.latin}</p>}
+          {d.name && d.latin && lang !== "ja" && <p className="text-ink-2">{lang === "en" ? d.name : d.latin}</p>}
         </div>
         <div className="flex gap-4 text-sm">
           <a href={`https://vndb.org/p${d.id}`} target="_blank" rel="noreferrer" className="text-accent-ink hover:underline">
