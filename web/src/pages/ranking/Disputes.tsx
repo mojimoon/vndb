@@ -36,7 +36,7 @@ function DisputeList({ title, rows }: { title: string; rows: Row[] }) {
           <tr>
             <th className="w-14 px-3 py-1.5 text-right font-medium">{t("rank.col.rank")}</th>
             <th className="w-14 px-3 py-1.5 text-right font-medium">VNDB</th>
-            <th className="w-16 px-3 py-1.5 text-right font-medium">{t("rank.col.delta")}</th>
+            <th className="w-18 px-3 py-1.5 text-right font-medium">{t("rank.col.delta")}</th>
             <th className="px-3 py-1.5 font-medium">{t("rank.col.title")}</th>
           </tr>
         </thead>

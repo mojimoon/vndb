@@ -41,7 +41,7 @@ function MoverList({ title, rows }: { title: string; rows: Row[] }) {
       <table className="w-full text-sm">
         <thead className="text-left text-xs text-ink-2">
           <tr>
-            <th className="w-14 px-3 py-1.5 text-right font-medium">{t("rank.col.before")}</th>
+            <th className="w-18 px-3 py-1.5 text-right font-medium">{t("rank.col.before")}</th>
             <th className="w-14 px-3 py-1.5 text-right font-medium">{t("rank.col.today")}</th>
             <th className="w-16 px-3 py-1.5 text-right font-medium">{t("rank.col.trend")}</th>
             <th className="px-3 py-1.5 font-medium">{t("rank.col.title")}</th>
