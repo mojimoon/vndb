@@ -42,9 +42,9 @@ export function TagAnalysis({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" |
   );
 }
 
-/** Colour for a significance of 0..3: grey -> teal -> blue -> violet (tokens --sig-0..3 in index.css). */
+/** Colour for a significance: grey up to 1.5, then teal -> blue -> violet at 3 (tokens --sig-0..3 in index.css). */
 export const sigColor = (sig: number) => {
-  const x = Math.max(0, Math.min(3, sig));
+  const x = Math.max(0, Math.min(3, (sig - 1.5) * 2));
   const i = Math.min(2, Math.floor(x));
   return `color-mix(in oklab, var(--sig-${i + 1}) ${Math.round((x - i) * 100)}%, var(--sig-${i}))`;
 };
@@ -104,7 +104,7 @@ export function TagCloud({ rows, marks, hint }: { rows: TagRow[]; marks: boolean
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-3">
         <span className="inline-flex items-center gap-1.5">
           {t("tags.legend.color")} 0
-          <span aria-hidden className="h-2 w-20 rounded-full" style={{ background: "linear-gradient(to right in oklab, var(--sig-0), var(--sig-1), var(--sig-2), var(--sig-3))" }} />3
+          <span aria-hidden className="h-2 w-20 rounded-full" style={{ background: "linear-gradient(to right in oklab, var(--sig-0) 50%, var(--sig-1) 66.7%, var(--sig-2) 83.3%, var(--sig-3))" }} />3
         </span>
         <span>{t("tags.legend.size")}</span>
         <span>{hint}</span>
@@ -121,7 +121,7 @@ export function SpoilerMark({ level }: { level: number }) {
     <sup
       title={t(`tags.spoiler.${level}` as StringKey)}
       aria-label={t(`tags.spoiler.${level}` as StringKey)}
-      className={`ml-0.5 cursor-help font-bold ${level === 1 ? "text-[10px] text-spoil-minor" : "text-[11px] text-down"}`}
+      className={`ml-[0.1em] cursor-help font-bold leading-none ${level === 1 ? "text-[0.7em] text-spoil-minor" : "text-[0.78em] text-down"}`}
     >
       {level === 1 ? "s" : "S"}
     </sup>
