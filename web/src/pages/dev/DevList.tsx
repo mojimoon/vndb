@@ -78,7 +78,7 @@ export default function DevList() {
                 <td className="tabular px-3 py-2 text-right text-ink-2">{i + 1}</td>
                 <td className="px-3 py-2">
                   <Link to={`/dev/${d.id}`} className="font-medium hover:text-accent-ink">
-                    {(lang === "zh" ? d.name ?? d.latin : d.latin ?? d.name) ?? `p${d.id}`}
+                    {(lang === "en" ? d.latin ?? d.name : d.name ?? d.latin) ?? `p${d.id}`}
                   </Link>
                   {d.first && <span className="ml-2 text-xs text-ink-3 tabular">{d.first === d.last ? d.first : `${d.first}–${d.last}`}</span>}
                 </td>

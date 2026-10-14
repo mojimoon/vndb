@@ -187,12 +187,13 @@ function Range({
   input: string;
   step: number;
 }) {
+  const { t } = useI18n();
   return (
     <Field label={label}>
       <div className="flex items-center gap-1">
-        <input type="number" inputMode="decimal" step={step} value={lo[1] ?? ""} onChange={(e) => update({ [lo[0]]: e.target.value })} placeholder="min" aria-label={`${label} min`} className={input} />
+        <input type="number" inputMode="decimal" step={step} value={lo[1] ?? ""} onChange={(e) => update({ [lo[0]]: e.target.value })} placeholder={t("common.min")} aria-label={t("common.rangeMin", { label })} className={input} />
         <span className="text-ink-3">–</span>
-        <input type="number" inputMode="decimal" step={step} value={hi[1] ?? ""} onChange={(e) => update({ [hi[0]]: e.target.value })} placeholder="max" aria-label={`${label} max`} className={input} />
+        <input type="number" inputMode="decimal" step={step} value={hi[1] ?? ""} onChange={(e) => update({ [hi[0]]: e.target.value })} placeholder={t("common.max")} aria-label={t("common.rangeMax", { label })} className={input} />
       </div>
     </Field>
   );

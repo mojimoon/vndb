@@ -96,7 +96,7 @@ export default function History() {
         {[7, 30, 90, 365].map((n) =>
           today - n >= first ? (
             <button key={n} type="button" className={btn} onClick={() => go(today - n)}>
-              {t("rank.history.ago", { n: n === 365 ? "1y" : `${n}d` })}
+              {n === 365 ? t("rank.history.agoYear") : t("rank.history.agoDays", { n })}
             </button>
           ) : null,
         )}

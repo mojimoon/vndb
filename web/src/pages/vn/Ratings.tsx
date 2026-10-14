@@ -110,9 +110,9 @@ function FilterBar({ f, raw, set, reset, active }: { f: VoterFilter; raw: (k: st
     <label className="block">
       <span className="mb-1 block text-xs text-ink-2">{label}</span>
       <span className="flex items-center gap-1">
-        <input type="number" inputMode="decimal" step={step} min={min} max={max} value={raw(lo)} onChange={(e) => set({ [lo]: e.target.value })} placeholder="min" aria-label={`${label} min`} className={input} />
+        <input type="number" inputMode="decimal" step={step} min={min} max={max} value={raw(lo)} onChange={(e) => set({ [lo]: e.target.value })} placeholder={t("common.min")} aria-label={t("common.rangeMin", { label })} className={input} />
         <span className="text-ink-3">–</span>
-        <input type="number" inputMode="decimal" step={step} min={min} max={max} value={raw(hi)} onChange={(e) => set({ [hi]: e.target.value })} placeholder="max" aria-label={`${label} max`} className={input} />
+        <input type="number" inputMode="decimal" step={step} min={min} max={max} value={raw(hi)} onChange={(e) => set({ [hi]: e.target.value })} placeholder={t("common.max")} aria-label={t("common.rangeMax", { label })} className={input} />
       </span>
     </label>
   );

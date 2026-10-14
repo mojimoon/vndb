@@ -6,7 +6,9 @@ export function titles(v: TitleFields, lang: Lang): { main: string; sub: string 
   const main =
     lang === "zh"
       ? v.title_zh ?? v.title_ja ?? v.title
-      : v.title_en ?? v.latin ?? v.title;
+      : lang === "ja"
+        ? v.title_ja ?? v.title
+        : v.title_en ?? v.latin ?? v.title;
   const sub = v.title !== main ? v.title : v.latin && v.latin !== main ? v.latin : null;
   return { main, sub };
 }
@@ -68,7 +70,7 @@ export function pearson(xs: number[], ys: number[]): number | null {
 
 /** Developer display name for the UI language. */
 export function devName(it: Pick<CatalogueItem, "dev" | "dev_latin">, lang: Lang): string | null {
-  return lang === "zh" ? it.dev ?? it.dev_latin : it.dev_latin ?? it.dev;
+  return lang === "en" ? it.dev_latin ?? it.dev : it.dev ?? it.dev_latin;
 }
 
 /** Sample percentile of each vote within one user's list (same formula as the pipeline). */

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, ScrollRestoration, useLocation } from "react-router";
-import { useI18n } from "../lib/i18n";
+import { LANG_LABELS, LANGS, useI18n, type Lang } from "../lib/i18n";
 import { useMeta } from "../lib/api";
 
 type Theme = "system" | "light" | "dark";
@@ -122,14 +122,18 @@ export default function Layout() {
                 <path d={GITHUB_ICON} />
               </svg>
             </a>
-            <button
-              type="button"
-              onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-              className="rounded-md px-2 py-1.5 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink"
-              aria-label="Switch language"
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value as Lang)}
+              className="cursor-pointer appearance-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink"
+              aria-label={t("nav.lang")}
             >
-              {lang === "zh" ? "EN" : "中文"}
-            </button>
+              {LANGS.map((l) => (
+                <option key={l} value={l}>
+                  {LANG_LABELS[l]}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={() => setTheme(next)}

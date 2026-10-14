@@ -22,7 +22,7 @@ export default function DevPage() {
   if (!d) return <p className="py-16 text-center text-sm text-ink-3">{t("common.notfound")}</p>;
   const vs = devs.get(Number(params.get("vs")));
   const peers = [...devs.values()].filter((x) => x.count >= PEER_MIN);
-  const name = (x: DevStats) => (lang === "zh" ? x.name ?? x.latin : x.latin ?? x.name) ?? `p${x.id}`;
+  const name = (x: DevStats) => (lang === "en" ? x.latin ?? x.name : x.name ?? x.latin) ?? `p${x.id}`;
   const metrics: [DevKey, string, (v: number) => string][] = [
     ["count", t("dev.vns"), (v) => String(v)],
     ["best", t("dev.best"), (v) => `#${v}`],
@@ -42,7 +42,7 @@ export default function DevPage() {
             /
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">{name(d)}</h1>
-          {d.name && d.latin && <p className="text-ink-2">{lang === "zh" ? d.latin : d.name}</p>}
+          {d.name && d.latin && <p className="text-ink-2">{lang === "en" ? d.name : d.latin}</p>}
         </div>
         <div className="flex gap-4 text-sm">
           <a href={`https://vndb.org/p${d.id}`} target="_blank" rel="noreferrer" className="text-accent-ink hover:underline">

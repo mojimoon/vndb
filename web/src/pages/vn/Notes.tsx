@@ -62,9 +62,9 @@ export default function Notes() {
           <label className="block">
             <span className="mb-1 block text-xs text-ink-2">{t("notes.userVotes")}</span>
             <span className="flex items-center gap-1">
-              <input type="number" inputMode="numeric" min={0} step={10} value={params.get("minv") ?? ""} onChange={(e) => set({ minv: e.target.value })} placeholder="min" aria-label={`${t("notes.userVotes")} min`} className={input} />
+              <input type="number" inputMode="numeric" min={0} step={10} value={params.get("minv") ?? ""} onChange={(e) => set({ minv: e.target.value })} placeholder={t("common.min")} aria-label={t("common.rangeMin", { label: t("notes.userVotes") })} className={input} />
               <span className="text-ink-3">–</span>
-              <input type="number" inputMode="numeric" min={0} step={10} value={params.get("maxv") ?? ""} onChange={(e) => set({ maxv: e.target.value })} placeholder="max" aria-label={`${t("notes.userVotes")} max`} className={input} />
+              <input type="number" inputMode="numeric" min={0} step={10} value={params.get("maxv") ?? ""} onChange={(e) => set({ maxv: e.target.value })} placeholder={t("common.max")} aria-label={t("common.rangeMax", { label: t("notes.userVotes") })} className={input} />
             </span>
           </label>
           {filtered ? (

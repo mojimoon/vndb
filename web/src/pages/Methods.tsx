@@ -18,6 +18,11 @@ const INTRO: Record<Lang, string[]> = {
     "For every pair A, B with n common voters, x rated A higher and y rated B higher. PONet methods average these pairwise results directly; the scientific-ranking methods (rankit) treat each pair as a game and solve it with classic sports rating systems such as Massey, Colley and Markov chains; Borda counts then merge several methods into one list.",
     "Sample percentiles turn each vote into its position within that user's own votes (0–1), which removes the effect of some people scoring generously and others harshly.",
   ],
+  ja: [
+    "半順序ネットワーク（Partial Order Network, PONet）ランキングは Bangumi ユーザー @eyecandy が提案したものです。作品ごとの得点分布ではなく、同じユーザーが異なる作品に付けた得点から作品同士の優劣を判断します。A と B の両方に投票した人の多くが A を高く評価していれば、A の方が上とみなします。",
+    "作品のペア A、B それぞれについて、両方に投票したユーザーが n 人、そのうち x 人が A を、y 人が B を高く評価したとします。この「対戦結果」からさまざまなスコアを計算できます。PONet 系の手法は結果をそのまま平均し、科学的ランキング（rankit）は各ペアを 1 試合とみなして Massey、Colley、Markov などの古典的なスポーツのレーティング手法で解きます。最後に Borda カウントで複数の手法の結果を統合します。",
+    "標本パーセンタイル（sample percentile）は、各投票をそのユーザーの全投票の中での位置（0〜1）に換算し、「甘めに付ける人・辛めに付ける人」の違いの影響を取り除きます。",
+  ],
 };
 
 const GROUPS: MethodGroup[] = ["merged", "po", "rankit", "ref"];
@@ -247,6 +252,38 @@ const CREDITS: Record<Lang, { title: string; body: React.ReactNode }[]> = {
       body: (
         <>
           All data comes from the <a href="https://vndb.org/d14">VNDB database dump</a> (ODbL), refreshed daily.
+        </>
+      ),
+    },
+  ],
+  ja: [
+    {
+      title: "半順序ネットワーク（PONet）",
+      body: (
+        <>
+          <a href="https://bgm.tv/user/eyecandy">@eyecandy</a> が提案し、2022 年に{" "}
+          <a href="https://bgm.tv/group/topic/371075">Bangumi の掲示板</a>でアニメのデータを使って試したものです。2023 年に本プロジェクトの作者が Bangumi15M データセットで再計算しました（
+          <a href="https://github.com/mojimoon/bangumi-anime-ranking/tree/main/ponet">mojimoon/bangumi-anime-ranking</a>、
+          <a href="https://bgm.tv/group/topic/382497">スレッド</a>）。
+        </>
+      ),
+    },
+    {
+      title: "科学的ランキング（rankit）",
+      body: (
+        <>
+          「科学的ランキング」の考え方と Massey、Colley、Keener、Markov、攻守法などの実装は{" "}
+          <a href="https://github.com/wattlebird/ranking">wattlebird/ranking（rankit）</a>によるものです。解説は{" "}
+          <a href="https://ikely.me/2016/02/05/%E4%BD%BF%E7%94%A8-rankit-%E6%9E%84%E5%BB%BA%E6%9B%B4%E7%A7%91%E5%AD%A6%E7%9A%84%E6%8E%92%E5%90%8D/">使用 rankit 构建更科学的排名</a>
+          と <a href="https://chii.ai/rank">Bangumi の科学的ランキング</a>を参照してください。
+        </>
+      ),
+    },
+    {
+      title: "データ",
+      body: (
+        <>
+          すべてのデータは <a href="https://vndb.org/d14">VNDB データベースダンプ</a>（ODbL）から取得し、毎日更新しています。
         </>
       ),
     },

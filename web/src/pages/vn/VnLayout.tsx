@@ -49,7 +49,7 @@ function Header({ vn, item }: { vn: VnDetail; item?: CatalogueItem }) {
   const dev = item ? devName(item, lang) : null;
   const facts: [string, React.ReactNode][] = [
     [t("vn.developer"), vn.dev_id ? <Link className="hover:text-accent-ink hover:underline" to={`/dev/${vn.dev_id}`}>{dev}</Link> : "—"],
-    [t("vn.released"), formatDate(vn.released)],
+    [t("vn.released"), formatDate(vn.released, t("vn.tba"))],
     [t("rank.olang"), vn.olang ? langName(vn.olang, lang) : "—"],
     [t("vn.votes"), formatInt(vn.votes)],
     [t("vn.rating"), vn.rating?.toFixed(2) ?? "—"],

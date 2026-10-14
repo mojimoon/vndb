@@ -69,15 +69,15 @@ function VndbHistory({ history }: { history: VnDetail["history"] }) {
 }
 
 type Ranked = { ranks: Record<string, [number, number | null]> };
-const top = (rank: number, total: number) => `top ${Math.max(0.1, (rank / total) * 100).toFixed(1)}%`;
 
 type RankScale = { total: number | null };
 
 function RankDisplay({ rank, scale }: { rank: number; scale: RankScale }) {
+  const { t } = useI18n();
   return (
     <span className="tabular inline-flex items-baseline gap-1.5 whitespace-nowrap">
       <span className="font-bold">#{rank}</span>
-      {scale.total !== null && <span className="text-[11px] text-ink-3">{top(rank, scale.total)}</span>}
+      {scale.total !== null && <span className="text-[11px] text-ink-3">{t("vn.topPct", { p: Math.max(0.1, (rank / scale.total) * 100).toFixed(1) })}</span>}
     </span>
   );
 }
