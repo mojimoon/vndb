@@ -1,5 +1,19 @@
 # Architecture
 
+## Repository layout
+
+| Directory | Contents |
+| --- | --- |
+| `pipeline/` | Data pipeline: reads the dump, builds the partial order network, computes the 41 rankings, exports the D1 snapshot SQL |
+| `web/` | Cloudflare Worker (API + static assets) and the React frontend; `web/migrations/` holds the D1 schema |
+| `.github/workflows/` | `refresh.yml` daily data refresh, `deploy.yml` site deploy, `ci.yml` tests, `dump-probe.yml` dump layout check |
+| `research/` | Earlier scripts, review sentiment experiments (DistilBERT / Transformer) and a playground |
+| `docs/` | This file, [deployment.md](deployment.md), [ranking-experiments.md](ranking-experiments.md) |
+
+Raw votes and the N² pair matrix only exist inside the offline pipeline; D1
+holds only what the site reads, packed so that one request reads one or a few
+rows (see Schema below).
+
 ## Why the Supabase version did not fit
 
 The previous design uploaded per-user votes (`ulist`, one row per user × VN,

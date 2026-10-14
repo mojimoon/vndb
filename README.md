@@ -1,130 +1,54 @@
 # VNDB SciRanking
 
-适用于 [Visual Novel Database](https://vndb.org/) (VNDB) 的基于偏序网络 (Partial Order Network, PONet) 的排名算法 + [科学排名](https://ikely.me/2016/02/05/%E4%BD%BF%E7%94%A8-rankit-%E6%9E%84%E5%BB%BA%E6%9B%B4%E7%A7%91%E5%AD%A6%E7%9A%84%E6%8E%92%E5%90%8D/)。
+English | [中文](README.zh.md)
 
-数据每天从 VNDB 数据库转储自动更新，网站运行在 Cloudflare Workers + D1 上。
+Rankings for the [Visual Novel Database](https://vndb.org/) (VNDB) built from partial order networks (PONet) and [scientific ranking](https://github.com/wattlebird/ranking). The data is refreshed daily from the VNDB database dump, and the site runs on Cloudflare Workers + D1.
 
-## 背景
+## Background
 
-基于偏序网络的排名算法最初由 [@eyecandy](https://bgm.tv/user/eyecandy) 提出，其核心思想是**基于同一用户对不同作品的评分来判断作品之间的相对优劣**，而不再关注作品本身的评分分布。
+Partial-order-network ranking was proposed by [@eyecandy](https://bgm.tv/user/eyecandy). Its core idea is to **judge titles against each other through the users who rated both**, instead of looking at each title's own score distribution.
 
-借此，PONet 可以通过简单高效的算法给出作品的相对排名，无需利用贝叶斯平均等复杂的统计方法，作为 [科学排名](https://chii.ai/rank) 的补充。
+This gives a relative ranking from simple, fast computations, with no Bayesian averaging or other heavy statistics, and complements [scientific ranking](https://chii.ai/rank). Put simply: if many people rated both A and B, and most of them (>50%) rated A higher, then A is better than B.
 
-简而言之，PONet 认为如果在有很多人同时给作品 A 和作品 B 评分的情况下，大多数人 (>50%) 认为 A 比 B 更好，那么我们就可以认为 A 比 B 更好。
+- In 2022, @eyecandy tried it on Bangumi's anime ratings and posted the results on the [Bangumi forum](https://bgm.tv/group/topic/371075).
+- In 2023, I recomputed the anime PONet ranking from the [Bangumi15M](https://www.kaggle.com/datasets/klion23/bangumi15m) dataset ([mojimoon/bangumi-anime-ranking](https://github.com/mojimoon/bangumi-anime-ranking/tree/main/ponet), [discussion](https://bgm.tv/group/topic/382497)).
+- Large datasets are hard to get from the Bangumi API, so that ranking was never updated. VNDB publishes a daily [database dump](https://vndb.org/d14), which makes regular updates possible, so this project applies the method to VNDB.
 
-- 2022 年，@eyecanday 以 Bangumi 动画区进行了实验，并将结果发布在 [Bangumi 讨论区](https://bgm.tv/group/topic/371075)。
-- 2023 年，我用 [Bangumi15M](https://www.kaggle.com/datasets/klion23/bangumi15m) 数据集重新计算了动画区的 PONet 排名，仓库在 [mojimoon/bangumi-anime-ranking](https://github.com/mojimoon/bangumi-anime-ranking/tree/main/ponet)，结果也发布在 [Bangumi 讨论区](https://bgm.tv/group/topic/382497)。
-- 然而，由于从 Bangumi API 获取大规模数据集不便且存在访问限制，上述排名长期没有得到更新。
-- 所幸，VNDB 提供了每日更新的 [database dump](https://vndb.org/d14)，使得定期更新排名成为可能，因此我决定将 PONet 算法应用于 VNDB 数据库。
+## Algorithm
 
-## 算法简述
+1. **Build the partial order network.** For each pair of titles A and B with n common voters, of whom x rated A higher and y rated B higher, A scores against B:
+   - **Total score**: x − y;
+   - **Percentage score**: (x − y) / n, close to the preference probability of scientific ranking;
+   - **Simple score**: sgn(x − y), i.e. 1, 0 or −1.
+2. **Turn it into a total order.** Each title's final score is the average of its scores against every other title.
 
-1. 构建偏序网络。对每一对作品 A 和 B，如果有 n 名用户同时对 A 和 B 进行了评分，其中 x 人认为 A 比 B 更好，y 人认为 A 比 B 差，则：
+Two parameters:
 
-- 定义 A 对 B 的「合计积分（Total Score）」为 (x-y) 分；
-- 定义 A 对 B 的「比例积分（Percentage Score）」为 (x-y)/n 分，这个分数接近于科学排名中的「倾向性概率」；
-- 定义 A 对 B 的「简易积分（Simple Score）」为 sgn(x-y) 分，其中 sgn 表示符号函数（即正数取值为 1，负数取值为 -1，0 取值为 0）。
+- `min_vote = 30`: only titles with at least 30 votes are ranked (VNDB's own top 50 uses the same threshold).
+- `min_common_vote = 5`: a pair only counts when at least 5 users voted on both.
 
-2. 将偏序网络转化为全序网络。针对每一个作品 A，将它与其它每一部作品 B1, B2, ... 进行比较，将 A 相对 B1, B2, ... 的积分进行平均，得到 A 的最终得分。
+### Scientific ranking and beyond
 
-此外还有两处 hyperparameter：
+The tuples `(A, B, x, y, n)` recorded while building the network are exactly the game results that scientific ranking needs (see the [rankit write-up](https://ikely.me/2016/02/05/%E4%BD%BF%E7%94%A8-rankit-%E6%9E%84%E5%BB%BA%E6%9B%B4%E7%A7%91%E5%AD%A6%E7%9A%84%E6%8E%92%E5%90%8D/) and [rankit](https://github.com/wattlebird/ranking)), so the project also includes Massey, Colley, Markov, offence–defence and other rating systems, plus Bradley–Terry and Elo. Borda counts merge them; the default **grand ranking** is a Borda count over the 9 methods that agree best between two random halves of the voters.
 
-- `min_vote = 30`：仅当作品 A 的评分人数 `>= min_vote` 时，才会进入这个排名系统。
-- `min_common_vote = 5`：仅当 A 和 B 的共同评分人数 `>= min_common_vote` 时，才会计算 A 对 B 的积分，否则忽略这对作品。
+The project also ranks by **sample percentiles**, which ignore how generous a user is and replace each vote with its position among that user's votes. If user C gave n votes $x_1 < x_2 < \ldots < x_n$, the n + 1 intervals $(-\infty, x_1), (x_1, x_2), \ldots, (x_n, +\infty)$ are taken to be equally likely, and tied votes share the midpoint:
 
-此处选择 `min_vote = 30` 是由于 VNDB 只有 >= 30 票的作品才能进入 Top 50。
+$$\text{sp}(x_k) = \frac{|\{x_i \mid x_i < x_k\}| + 0.5 \cdot |\{x_i \ (i \neq k) \mid x_i = x_k\}| + 1}{n + 1}$$
 
-### 要不要试试科学排名？以及更多
+41 methods are available in total. [docs/ranking-experiments.md](docs/ranking-experiments.md) covers how they were chosen and how the grand ranking was built.
 
-实际上，构建偏序网络过程中记录的五元组 `(A, B, x, y, n)` 可以作为科学排名的倾向性概率使用（详见 [科学排名原博客](https://ikely.me/2016/02/05/%E4%BD%BF%E7%94%A8-rankit-%E6%9E%84%E5%BB%BA%E6%9B%B4%E7%A7%91%E5%AD%A6%E7%9A%84%E6%8E%92%E5%90%8D/) 和 [rankit 项目](https://github.com/wattlebird/ranking)。因此，这个项目也将科学排名囊括在内。
+## Features
 
-此外，上述过程同时可以计算出 sample percentile（样本百分位数），其不关心用户 C 具体的评分分布，而是将其转化为一个 0-100% 的百分位数，表示某个具体分数 t 在 C 的所有评分中所处的百分位数。具体来说，
+- **Ranking**: any of the 41 methods, side by side with up to 3 others; custom columns, CSV export; filters by developer, year, language, length, votes and VNDB rating. Tabs for best by year, disagreements with VNDB, movers, and history (the ranking on any recorded day and the change since).
+- **Title pages**: overview, rating analysis with voter filters, rank by every method, rank history and VNDB rating / votes over time, head-to-head against any title, similar titles, reviews (public list notes) and a TF-IDF tag analysis.
+- **Developers**: developer leaderboard (titles, best / median rank, mean rating), developer pages and developer comparisons.
+- **Users**: user leaderboards, taste analysis, all votes, recommendations from similar users, similar users, reviews and tag preferences. Users with at least 5 votes on ranked titles get a page.
+- **Compare**: two titles (head-to-head, distributions, joint vote matrix, reviews by people who reviewed both) or two users (raw score / percentile scatter, disagreements, shared favourites).
+- Chinese, English and Japanese UI; light and dark themes.
 
-- 假设用户 C 总共给出了 $n$ 个评分 $\{x_1, x_2, \ldots, x_n\} (x_1 < x_2 < \ldots < x_n)$。
-- 将整个标准化的取值范围划分为 $n+1$ 个区间 $(-\infty, x_1), (x_1, x_2), \ldots, (x_{n-1}, x_n), (x_n, +\infty)$。假设随机变量落在每个区间的概率相等，都是 $\frac{1}{n+1}$。因此，计算 $P(x \leq x_k)$ 即可得出 $x_k$ 的百分位数。
-- 对于每一个具体的评分 $x_k$，如有多个相同评分，将其视为一个整体，其百分位数取值为该区间的中点。
+## Usage
 
-得出计算公式：
-
-$$\text{sp}(x_k) = \frac{(|\{x_i | x_i < x_k\}| + 0.5 \cdot |\{x_i (i \neq k) | x_i = x_k\}| + 1)}{n + 1}$$
-
-其中 $|\{x_i | x_i < x_k\}|$ 表示小于 $x_k$ 的评分数量。这个项目中也尝试了使用 sample percentile 来进行排名。
-
-## 架构
-
-```
-VNDB dump ──► pipeline/ (Python) ──► snapshot.sql ──► Cloudflare D1 ──► web/worker (Hono API) ──► web/src (React SPA)
-             每日 12:07 UTC，GitHub Actions                              边缘缓存，按快照失效
-```
-
-| 目录 | 内容 |
-| --- | --- |
-| `pipeline/` | 数据管线：读取转储、构建偏序网络、计算 41 种排名、导出 D1 快照 SQL |
-| `web/` | Cloudflare Worker（API + 静态资源）与 React 前端；`web/migrations/` 为 D1 表结构 |
-| `.github/workflows/` | `refresh.yml` 每日更新数据，`deploy.yml` 部署网站，`ci.yml` 测试，`dump-probe.yml` 检查转储表结构 |
-| `research/` | 旧版脚本、评论情感分类实验（DistilBERT / Transformer）和 playground |
-| `docs/architecture.md` | 数据库设计与 D1 免费额度估算（英文） |
-
-### 为什么从 Supabase 换到 D1 之后放得下
-
-旧方案把逐用户评分（`ulist`，数百万行）整个上传到数据库。新方案中原始评分和 N² 的作品对矩阵只在离线管线里计算，数据库只保存网站需要读取的结果，并且按「一次读取一行」打包：
-
-| 表 | 内容 |
-| --- | --- |
-| `vn` | 每部作品一行（7,945 行）：各方法排名、评分分析、正面交锋、相似作品、排名历史（JSON 列） |
-| `producer` | 开发商 |
-| `doc` | 预先生成的接口响应（作品目录、每种方法的排名表），Worker 直接拼接返回 |
-| `vn_voters` | 每部作品的评分者（uid、分数、百分位、列表状态，以及该用户的评分数、与 VNDB / SciRanking 的相关性），按分片存放；用于任意两部作品的精确对比、10×10 评分矩阵和评分者筛选 |
-| `vn_notes` / `user_notes` | 用户公开列表中的备注（≥ 20 字，作为「短评」展示），分别按作品和用户分片 |
-| `user_block` / `user_name` | 55,778 位用户的评分、相似用户、推荐，以及用户名索引 |
-| `meta` | 快照编号、方法列表、统计数据、方法一致性矩阵、用户排行 |
-
-每日更新约写入 1.5 万行（D1 免费额度为每天 10 万行）。作品目录等常用响应预先生成，一次请求只读几十行；所有响应按快照在边缘缓存一周。导入脚本删除并重建所有表；D1 以原子方式执行整个导入（失败则回滚），读者不会看到新旧混合的数据，数据库也不会同时存放两份快照。详见 [docs/architecture.md](docs/architecture.md)；排名方法的取舍与实验记录见 [docs/ranking-experiments.md](docs/ranking-experiments.md)。
-
-### 功能
-
-- **排行**：41 种方法任选，可并排对比最多 3 种方法（按与主方法的差异着色）、自选显示列、导出 CSV；按开发商、年份筛选，高级筛选包括语言、长度、票数、VNDB 评分；「年度最佳」「与 VNDB 的分歧」「排名变动」「历史」分页（历史：任选一天查看当天的综合排名、VNDB 排名、评分与票数，以及之后的名次变化；近 90 天每天、一年内每周、更早每月保留一天）。
-- **作品页**：概览（综合排名的总排名及在同年份、同开发商、同原语言作品中的排名）、评分分析（可按列表状态、评分者的评分数、评分者与 VNDB / SciRanking 的相关性筛选评分者；分布与累计占比、样本百分位分布、每年评分数与平均分、列表状态、评分者偏好）、各方法排名、排名历史与 VNDB 评分 / 票数走势、与任意作品的正面交锋、相似作品（含正面交锋）、短评（按时间 / 评分 / 在评分者心中的位置排序，按列表状态和作者评分数筛选）、标签分析（按 TF-IDF 计分的标签云与可排序、可按类别和剧透筛选的标签表）。
-- **开发商**：开发商排行（作品数、最佳 / 中位排名、平均评分），开发商页面与其他开发商对比。
-- **用户**：用户排行（评分最多、今年评分最多、短评最多、最主流 / 最另类），个人页面的口味分析（与 VNDB / SciRanking 的相关性、评分 × VNDB 评分与百分位 × SciRanking 热力图）、全部评分、基于相似用户的推荐、相似用户（含评分高低对比）、短评、标签偏好（TF × 按评分数加权的 IDF）。只收录在已排名作品上至少有 5 个评分的用户。
-- **对比**：两部作品（正面交锋、评分与百分位分布、共同评分者的 10×10 评分矩阵、两部都写了短评的用户按高分 / 低分分组）或两位用户（原始分 / 样本百分位切换、散点图、分歧、共同喜欢 / 不喜欢、一方高分或低分而另一方未评分；点击作品查看两人的短评）。
-
-## 使用方法
-
-### 1. 一次性配置 Cloudflare
-
-需要 Node.js 22+。
-
-```bash
-cd web
-npm install
-npx wrangler login
-npx wrangler d1 create vndb          # 把输出的 database_id 填入 web/wrangler.jsonc
-npm run deploy                       # 部署 Worker 和前端；表结构由每日导入的快照创建
-```
-
-自定义域名：在 `web/wrangler.jsonc` 中取消注释 `routes` 并填入域名（域名需已托管在 Cloudflare），或在 Cloudflare 控制台的 Worker → Settings → Domains & Routes 中添加。注意 Workers 的边缘缓存（Cache API）只在自定义域名上生效，`*.workers.dev` 上每次请求都会读数据库。
-
-### 2. 配置自动更新（GitHub Actions）
-
-在 Cloudflare 创建 API Token：控制台右上角头像 → **My Profile → API Tokens → Create Token**，选择 **Edit Cloudflare Workers** 模板，再点 **+ Add more** 增加一条权限 **Account · D1 · Edit**；Account Resources 选择你的账户，Zone Resources 选择你的域名（或 All zones）。
-
-然后在 GitHub 仓库 **Settings → Secrets and variables → Actions** 中添加：
-
-| Secret | 值 |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN` | 上面创建的 Token |
-| `CLOUDFLARE_ACCOUNT_ID` | 控制台 Workers & Pages 页面右侧的 Account ID |
-| `D1_DATABASE_ID` | `npx wrangler d1 list` 输出的 database_id |
-
-之后：
-
-- `refresh.yml` 每天 12:07 UTC（VNDB 约在 08:00 UTC 发布转储）下载转储、重新计算并导入 D1；也可以在 Actions 页面手动运行。定时任务只在默认分支上触发。
-- `deploy.yml` 在 `main` 分支的 `web/` 有改动时自动部署。
-
-### 3. 本地开发
-
-前端（使用仓库自带的**合成**示例数据，不是真实 VNDB 数据）：
+Preview the site locally with the bundled sample data (not real data, Node.js 22+):
 
 ```bash
 cd web
@@ -133,7 +57,7 @@ npm run db:seed:local
 npm run dev                          # http://localhost:5173
 ```
 
-数据管线（需要 Python 3.11+；完整计算约需数 GB 内存）：
+Run the pipeline on a real dump (Python 3.11+, a few GB of RAM):
 
 ```bash
 curl -L -o db.tar.zst https://dl.vndb.org/dump/vndb-db-latest.tar.zst
@@ -141,23 +65,18 @@ mkdir -p db && tar -I zstd -xf db.tar.zst -C db && rm db.tar.zst
 
 cd pipeline
 pip install -r requirements.txt
-python -m vndb_rank --dump ../db --out out          # 约 10 分钟；--skip-rankit / --skip-users / --skip-notes 可跳过部分步骤
-npx --prefix ../web wrangler d1 execute vndb --local --file out/snapshot.sql   # 导入本地 D1
-python -m pytest                                     # 测试（使用合成数据）
+python -m vndb_rank --dump ../db --out out
+npx --prefix ../web wrangler d1 execute vndb --local --file out/snapshot.sql
 ```
 
-## 与旧版的差异
+To host your own copy with daily updates, see [docs/deployment.md](docs/deployment.md).
 
-重写时修复了旧版 `research/legacy_main.py` 中的几个问题，因此结果与旧版不完全相同：
+## Documentation
 
-- **作品对计数丢失约一半**：旧版按评分顺序给作品编号，但按 vid 顺序遍历用户列表，约一半的比较落在矩阵下三角，导出时只读取上三角而被丢弃。
-- rankit 的三个 Markov 变体会原地修改共享的输入表，导致之后的 OD、Difference 等方法使用了被改动过的比分。
-- Elo 的评分被截断为整数，且按人数放大的更新在热门作品对上会发散；现改为每对作品一场比赛、以偏好比例为结果的标准 Elo。
-- 熵加权方法的归一化项符号错误；无随机种子的「VI」方法替换为 Bradley–Terry（MM 算法）。
-- 「正面交锋」各类别现在分别在所有作品对中选取，而不是只在共同评分最多的 10 部中选取。
-- 移除了表现不佳的方法：随机游走（与其他方法几乎不相关），以及 Keener、Markov（胜率）、差值、Massey（偏好人数）等实际上按人气排序的变体，详见 [docs/architecture.md](docs/architecture.md#which-ranking-methods-are-kept)。
-- 排除了被 VNDB 标记为忽略评分（`ign_votes`）的用户。这些账号贡献了约 220 万对作品比较（总数从 711 万降到 489 万），对排名影响明显。
+- [docs/deployment.md](docs/deployment.md): Cloudflare setup, GitHub Actions, local development
+- [docs/architecture.md](docs/architecture.md): repository layout, data flow, database schema, free-tier budget
+- [docs/ranking-experiments.md](docs/ranking-experiments.md): ranking methods and the experiments behind the grand ranking
 
-## 许可
+## License
 
-数据来自 [VNDB 数据库转储](https://vndb.org/d14)，依 ODbL 授权。
+Data from the [VNDB database dump](https://vndb.org/d14), under the ODbL.
