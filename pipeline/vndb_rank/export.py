@@ -49,7 +49,7 @@ SCHEMA: dict[str, str] = {
   relations    TEXT    NOT NULL,      -- JSON [[vid, relation], ...]
   analysis     TEXT    NOT NULL,      -- JSON, see analysis.py
   similar      TEXT    NOT NULL,      -- JSON [[vid, similarity, common, wins, losses], ...]
-  history      TEXT    NOT NULL,      -- JSON [[day, rank, vndb_rank], ...], day = days since 2000-01-01
+  history      TEXT    NOT NULL,      -- JSON [[day, rank, vndb_rank, rating, votes], ...], day = days since 2000-01-01 (from history_day)
   tags         TEXT    NOT NULL       -- JSON [[tag, rating, spoiler 0-2, voters], ...], see tags.py
 """,
     "producer": """
@@ -93,6 +93,12 @@ SCHEMA: dict[str, str] = {
   data  TEXT    NOT NULL,  -- a prebuilt JSON response, split into parts
   PRIMARY KEY (key, part)
 """,
+    "history_day": """
+  day   INTEGER NOT NULL,  -- days since 2000-01-01
+  part  INTEGER NOT NULL,
+  data  TEXT    NOT NULL,  -- base64 of history.HIST_DTYPE records, every VN ranked that day, by rank
+  PRIMARY KEY (day, part)
+""",
     "meta": """
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL      -- JSON
@@ -107,15 +113,20 @@ VN_COLUMNS = [
 
 
 # Tables keyed by a composite or text key are stored clustered on that key.
-WITHOUT_ROWID = {"user_block", "user_name", "vn_voters", "vn_notes", "user_notes", "doc", "meta"}
+WITHOUT_ROWID = {"history_day", "user_block", "user_name", "vn_voters", "vn_notes", "user_notes", "doc", "meta"}
 
 
 PRODUCER_COLUMNS = ["id", "name", "latin"]
 
 
-def create_table(name: str) -> str:
+# Kept across snapshots: updated in place instead of dropped and rebuilt.
+PERSISTENT = {"history_day"}
+
+
+def create_table(name: str, if_not_exists: bool = False) -> str:
     tail = " WITHOUT ROWID" if name in WITHOUT_ROWID else ""
-    return f"CREATE TABLE {name} ({SCHEMA[name].rstrip()}\n){tail};"
+    head = "CREATE TABLE IF NOT EXISTS" if if_not_exists else "CREATE TABLE"
+    return f"{head} {name} ({SCHEMA[name].rstrip()}\n){tail};"
 
 
 def sql_literal(v: Any) -> str:
@@ -180,8 +191,16 @@ def _none(v: Any) -> Any:
     return v
 
 
-def write_sql(path: Path, tables: dict[str, tuple[Sequence[str], Iterable[Sequence[Any]]]]) -> dict[str, int]:
+def write_sql(
+    path: Path,
+    tables: dict[str, tuple[Sequence[str], Iterable[Sequence[Any]]]],
+    updates: dict[str, tuple[str, Sequence[Any], Sequence[str], Iterable[Sequence[Any]]]] | None = None,
+) -> dict[str, int]:
     """tables: name -> (columns, rows). ``meta`` (holding the snapshot id) is written last.
+
+    updates: PERSISTENT table -> (key column, keys to delete, columns, rows to
+    insert). These tables are created if missing and changed in place, never
+    dropped, so what earlier snapshots wrote survives.
 
     D1 imports a file atomically (the database is unavailable while it runs and
     rolls back if any statement fails), so each table is simply dropped and
@@ -196,6 +215,16 @@ def write_sql(path: Path, tables: dict[str, tuple[Sequence[str], Iterable[Sequen
         # Drop everything first (also leftovers of the older build-then-swap format).
         for name in order:
             f.write(f"DROP TABLE IF EXISTS {name}__next;\nDROP TABLE IF EXISTS {name};\n")
+        for name, (key, delete, columns, rows) in (updates or {}).items():
+            assert name in PERSISTENT, name
+            f.write(f"{create_table(name, if_not_exists=True)}\n")
+            delete = sorted({int(k) for k in delete})
+            for i in range(0, len(delete), 500):
+                f.write(f"DELETE FROM {name} WHERE {key} IN ({', '.join(map(str, delete[i:i + 500]))});\n")
+            rows = list(rows)
+            counts[name] = len(rows)
+            for stmt in insert_statements(name, columns, rows):
+                f.write(stmt + "\n")
         for name in order:
             columns, rows = tables[name]
             f.write(f"{create_table(name)}\n")

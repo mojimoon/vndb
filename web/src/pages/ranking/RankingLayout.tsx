@@ -138,6 +138,7 @@ export default function RankingLayout() {
           { path: "years", label: t("rank.tab.years") },
           { path: "disputes", label: t("rank.tab.disputes") },
           { path: "movers", label: t("rank.tab.movers") },
+          { path: "history", label: t("rank.tab.history") },
         ]}
       />
 

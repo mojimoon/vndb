@@ -7,8 +7,7 @@
   ``PART_BYTES`` (D1 caps a statement at 100 KB and a BLOB literal is hex).
 * User shards: users grouped by ``uid % USER_SHARDS``; one JSON object per part.
 * Name index: lowercased username -> uid, grouped by FNV-1a hash.
-* Rank history: [[day, rank_a, rank_b], ...] per VN, daily for 90 days, then
-  weekly for two years.
+* Rank history lives in history.py.
 
 The worker (web/worker/index.ts) mirrors these formats; keep them in sync.
 """
@@ -189,29 +188,3 @@ def note_shards(rows: list[list], key: int, shards: int) -> Iterator[tuple[int, 
 
 def day_number(date: str) -> int:
     return (dt.date.fromisoformat(date) - EPOCH).days
-
-
-def merge_history(prev: list | None, today: int, ranks: list[int]) -> list[list[int]]:
-    """Append today's ranks and thin out old points (daily 90 days, weekly 2 years)."""
-    pts = [p for p in (prev or []) if isinstance(p, list) and p and p[0] < today]
-    pts.append([today, *ranks])
-    out, seen_weeks = [], set()
-    for p in pts:
-        age = today - p[0]
-        if age <= 90:
-            out.append(p)
-        elif age <= 730:
-            week = p[0] // 7
-            if week not in seen_weeks:
-                seen_weeks.add(week)
-                out.append(p)
-    return out
-
-
-def rank_trend(history: list[list[int]], today: int, days: int = 30) -> int | None:
-    """Change of the first tracked rank vs. the closest point at least `days` ago
-    (positive = moved up)."""
-    old = [p for p in history if today - p[0] >= days]
-    if not old:
-        return None
-    return old[-1][1] - history[-1][1]

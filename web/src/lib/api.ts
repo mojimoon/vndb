@@ -69,7 +69,8 @@ export interface VnDetail extends TitleFields {
   trend: number | null;
   ranks: Record<string, [number, number | null]>;
   analysis: Analysis;
-  history: [day: number, rank: number, vndbRank: number][];
+  /** Oldest first; rating and votes are null on days recorded before they were tracked. */
+  history: [day: number, rank: number, vndbRank: number, rating?: number | null, votes?: number | null][];
   neighbors: { id: number; wins: number; losses: number; common: number }[];
   relations: { id: number; relation: string }[];
   similar: { id: number; sim: number; common: number; wins: number; losses: number }[];
@@ -173,6 +174,8 @@ export interface Meta {
     featured: string[];
     default_method: string;
     history_methods?: string[];
+    /** Days (since 2000-01-01) with a stored history snapshot (/api/history/:day), oldest first. */
+    history_days?: number[];
   };
   stats: Stats;
   kendall: { methods: string[]; matrix: number[][] };
@@ -422,6 +425,46 @@ export function useVnTagTable(enabled: boolean): Loadable<VnTagTable> {
     };
   }, [enabled]);
   return res;
+}
+
+/** Every VN ranked on one day (pipeline history.HIST_DTYPE, 14 bytes each), by default-method rank. */
+export interface HistoryDay {
+  n: number;
+  vid: Uint32Array;
+  rank: Uint16Array;
+  vndbRank: Uint16Array;
+  rating: Float32Array; // NaN = none
+  votes: Uint32Array; // 0 = not recorded that day
+}
+
+export function useHistoryDay(day: number | null): Loadable<HistoryDay> {
+  const [res, setRes] = useState<{ day: number | null; value: Loadable<HistoryDay> }>({ day, value: { state: "loading" } });
+  useEffect(() => {
+    if (day === null) return;
+    let alive = true;
+    fetchBinary(`/api/history/${day}`).then(
+      (buf) => {
+        const view = new DataView(buf);
+        const n = Math.floor(buf.byteLength / 14);
+        const d: HistoryDay = { n, vid: new Uint32Array(n), rank: new Uint16Array(n), vndbRank: new Uint16Array(n), rating: new Float32Array(n), votes: new Uint32Array(n) };
+        for (let i = 0; i < n; i++) {
+          const p = 14 * i;
+          d.vid[i] = view.getUint32(p, true);
+          d.rank[i] = view.getUint16(p + 4, true);
+          d.vndbRank[i] = view.getUint16(p + 6, true);
+          const r = view.getUint16(p + 8, true);
+          d.rating[i] = r ? r / 100 : NaN;
+          d.votes[i] = view.getUint32(p + 10, true);
+        }
+        if (alive) setRes({ day, value: { state: "ok", data: d } });
+      },
+      (error: Error) => alive && setRes({ day, value: { state: "error", error } }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [day]);
+  return res.day === day ? res.value : { state: "loading" };
 }
 
 export const useUser = (uid: number) => useApi<UserData>(`/api/user/${uid}`);

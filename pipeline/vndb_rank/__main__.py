@@ -25,9 +25,10 @@ from .neighbors import build_neighbors
 from .pairs import build_pairs
 from .leaderboards import build_leaderboards
 from .tags import load_tags, tags_doc, vn_tag_json, vn_tags_blob, vote_idf
+from .history import day_records, encode_day, keep_days, legacy_days, load_days, rank_trend, vn_histories
 from .storage import (
-    USER_NOTE_SHARDS, VN_NOTE_SHARDS, day_number, merge_history, name_shards, note_shards,
-    rank_trend, text_parts, user_shards, voter_records, voter_shards,
+    USER_NOTE_SHARDS, VN_NOTE_SHARDS, day_number, name_shards, note_shards,
+    text_parts, user_shards, voter_records, voter_shards,
 )
 
 log = logging.getLogger("vndb_rank")
@@ -71,27 +72,7 @@ def pair_lookup(pairs, n: int):
     return get
 
 
-def load_previous_history(path: Path | None) -> dict[int, list]:
-    """Accept `wrangler d1 execute --json` output or a plain list of {id, history} rows."""
-    if not path or not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text() or "[]")
-    except json.JSONDecodeError:
-        log.warning("history: %s is not JSON, starting fresh", path)
-        return {}
-    rows = data[0].get("results", []) if data and isinstance(data[0], dict) and "results" in data[0] else data
-    out = {}
-    for r in rows:
-        try:
-            out[int(r["id"])] = json.loads(r["history"]) if isinstance(r["history"], str) else r["history"]
-        except (KeyError, TypeError, ValueError):
-            continue
-    log.info("history: %d VNs from %s", len(out), path)
-    return out
-
-
-def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = None) -> dict:
+def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = None, legacy_history_path: Path | None = None) -> dict:
     t0 = time.time()
     dump = Dump(dump_dir)
     cat = load_catalogue(dump, cfg)
@@ -158,8 +139,23 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
     del extras
 
     today = day_number(date)
-    prev = load_previous_history(history_path)
-    history = [merge_history(prev.get(int(vid)), today, [int(ranks[default].iloc[i]), int(ranks["vndb"].iloc[i])]) for i, vid in enumerate(ids)]
+    # history_day as fetched from D1; the old per-VN column only before the first migration.
+    stored = load_days(history_path)
+    days = dict(stored) if stored else legacy_days(legacy_history_path)
+    if cfg.skip_rankit:
+        log.info("history: --skip-rankit, today is not recorded (the default method differs)")
+    else:
+        days[today] = day_records(ids, ranks[default].to_numpy(), ranks["vndb"].to_numpy(), cat.vn["rating"].to_numpy(dtype=np.float64), cat.vn["votes"].to_numpy())
+    kept = keep_days(days.keys(), today)
+    days = {d: days[d] for d in sorted(kept)}
+    history = vn_histories(days, ids)
+    new_days = [d for d in days if d not in stored or d == today]
+    history_update = (
+        "day",
+        [d for d in stored if d not in kept] + new_days,
+        ["day", "part", "data"],
+        [[d, part, piece] for d in new_days for part, piece in enumerate(text_parts(encode_day(days[d])))],
+    )
 
     for table in ["vn", "releases", "producers", "users", "chars", "staff", "tags", "traits"]:
         if dump.has(table):
@@ -182,6 +178,7 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
             "featured": featured,
             "default_method": default,
             "history_methods": [default, "vndb"],
+            "history_days": list(days),
         },
         "stats": stats,
         "kendall": kendall_matrix(scores, featured),
@@ -238,7 +235,7 @@ def run(dump_dir: Path, out_dir: Path, cfg: Config, history_path: Path | None = 
         "doc": (["key", "part", "data"], doc_rows),
         "meta": (["key", "value"], [[k, compact_json(v)] for k, v in meta.items()]),
     }
-    counts = write_sql(out_dir / "snapshot.sql", tables)
+    counts = write_sql(out_dir / "snapshot.sql", tables, {"history_day": history_update})
     size = (out_dir / "snapshot.sql").stat().st_size
     summary = {
         "snapshot": snapshot, "rows": counts, "rows_total": sum(counts.values()), "pairs": len(pairs),
@@ -260,7 +257,8 @@ def main() -> None:
     ap.add_argument("--skip-rankit", action="store_true", help="only compute the PONet methods (fast)")
     ap.add_argument("--skip-users", action="store_true", help="skip user pages, recommendations and similar VNs")
     ap.add_argument("--skip-notes", action="store_true", help="do not export users' list notes")
-    ap.add_argument("--history", type=Path, default=None, help="previous `SELECT id, history FROM vn` as JSON (wrangler --json output)")
+    ap.add_argument("--history", type=Path, default=None, help="`SELECT day, part, data FROM history_day` as JSON (wrangler --json output, blocks concatenated)")
+    ap.add_argument("--legacy-history", type=Path, default=None, help="`SELECT id, history FROM vn` from before history_day existed (used only when --history is empty)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = Config(
@@ -268,7 +266,7 @@ def main() -> None:
         neighbors_per_category=args.neighbors, skip_rankit=args.skip_rankit,
         min_user_votes=args.min_user_votes, skip_users=args.skip_users, skip_notes=args.skip_notes,
     )
-    run(args.dump, args.out, cfg, args.history)
+    run(args.dump, args.out, cfg, args.history, args.legacy_history)
 
 
 if __name__ == "__main__":

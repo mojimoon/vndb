@@ -14,7 +14,7 @@ instance's storage.
 dl.vndb.org dump (daily, ~08:00 UTC)
   └─ GitHub Actions refresh.yml (12:07 UTC)
        ├─ extract 14 tables from the 190 MB .tar.zst
-       ├─ fetch yesterday's rank history from D1 (`SELECT id, history FROM vn`)
+       ├─ fetch the stored history from D1 (`history_day`, .github/scripts/fetch-history.sh; any error stops the run)
        ├─ pipeline/ (python -m vndb_rank, ~10 min)
        │    extract.py    catalogue (VNs with >= 30 votes), users, one streaming pass over ulist_vns
        │    analysis.py   per-VN rating analysis
@@ -24,8 +24,9 @@ dl.vndb.org dump (daily, ~08:00 UTC)
        │    tags.py       VNDB-style tag ratings, document frequencies, IDF
        │    neighbors.py  per-VN head-to-head opponents
        │    cf.py         similar users, recommendations, similar VNs
-       │    storage.py    voter blobs, user / note shards, text parts, history
-       │    export.py     snapshot.sql (drop + recreate every table)
+       │    history.py    daily rank / VNDB rating / votes snapshots, thinning
+       │    storage.py    voter blobs, user / note shards, text parts
+       │    export.py     snapshot.sql (drop + recreate every table except history_day)
        └─ wrangler d1 execute --remote --file snapshot.sql
 Cloudflare D1  <──  Worker (Hono, web/worker/index.ts)  <──  React SPA (static assets)
 ```
@@ -61,6 +62,7 @@ Numbers from the 2026-10-06 dump:
 | table | rows | what one row holds |
 | --- | --- | --- |
 | `vn` | 7,945 | one VN: display fields + JSON columns `ranks`, `analysis`, `neighbors`, `similar`, `relations`, `history` |
+| `history_day` | ~3 per day | every VN ranked that day, by rank: 14-byte records `vid u32, default-method rank u16, VNDB rank u16, VNDB rating ×100 u16, votes u32` (`history.HIST_DTYPE`), base64; kept across snapshots |
 | `producer` | 2,410 | one developer |
 | `doc` | ~190 | a prebuilt API response split into ≤ 80 KB parts: `catalogue` (columnar), `ranks:<method>`, `tags` (tag dictionary) and `vntags` (base64 tags of every ranked VN) |
 | `vn_voters` | ~1.6k | voters of the VNs with `idx % 1024 == shard`: segments `(idx u16, n u32)` + n × 13-byte records sorted by uid: `uid u32, vote u8, sample percentile ×200 u8, list labels u8, year−1990 u8, the user's vote count u16, the user's mean vote u8, r vs VNDB ×100 i8, r vs SciRanking ×100 i8` (`storage.VOTER_DTYPE`) |
@@ -160,6 +162,41 @@ yellow "s" (minor) or a red "S" (major); on title pages the cloud follows the
 table's spoiler setting. User pages have no spoiler levels: a tag summed over
 many titles does not spoil any one of them.
 
+### History
+
+Each refresh records, for every ranked VN, its rank under the default method
+(the grand ranking), its VNDB rank, VNDB rating and vote count, as one
+`history_day` row group (~150 KB per day for 8k titles). Kept: every day for
+90 days, then the first recorded day of each week (and of each month) for a
+year, then the first recorded day of each month (`history.keep_days`).
+
+`history_day` is the only table a snapshot does not rebuild. The refresh
+fetches it a few days per query, the pipeline adds today and thins it, and the
+snapshot deletes the thinned days and inserts the new one in place. Everything
+derived from it is rebuilt each time: `vn.history` (`[[day, rank, vndb_rank,
+rating, votes], ...]`, the charts on a title's Ranks tab), `vn.trend` (30-day
+change, Movers) and `info.history_days` (the dates the Ranking → History tab
+offers; `/api/history/:day` returns one day as binary).
+
+Safeguards:
+
+* The fetch fails the run on any error except a missing table, and checks that
+  it received every part of every day. Wrong or partial history is never
+  built on.
+* The snapshot only deletes days it fetched, and inserts new days with plain
+  `INSERT`s, so a day it did not know about makes the import fail (and roll
+  back) instead of being overwritten.
+* Titles that leave the ranking stay in the stored days (shown as "no longer
+  ranked" in the History tab) and get their chart back if they return.
+* Each run uploads the fetched history as the `history-backup` artifact
+  (kept 30 days). To restore, download it and run the pipeline with
+  `--history history.json` against an empty `history_day`.
+* `--skip-rankit` runs (different default method) do not record a day.
+
+Before `history_day` existed the history was a per-VN column holding only the
+two ranks. The first refresh with this version reads that column instead
+(`--legacy-history`) and turns it into days with no rating or votes.
+
 ### Voter filters
 
 The ratings tab can recompute a VN's analysis over a subset of its voters
@@ -175,7 +212,8 @@ request never has to look users up.
 D1 runs an imported file atomically: the database does not serve queries
 while the import runs, and any failure rolls it back to the previous snapshot.
 `snapshot.sql` therefore simply drops every table and recreates it, with
-`meta` (holding the snapshot id) last. D1 rejects `BEGIN`/`COMMIT` in imported
+`meta` (holding the snapshot id) last. The exception is `history_day`, which is
+updated in place (see History). D1 rejects `BEGIN`/`COMMIT` in imported
 files, so the file has none. Schema changes ship with the data (there are no
 separate migrations).
 
@@ -201,6 +239,7 @@ the edge can hand an old-format response to new code.
   * `/api/vn/:id`: 1. `/api/user/:uid`: 1-2. `/api/user-lookup`: 1.
   * `/api/joint/:a/:b`: 1-10 (two voter shards). `/api/voters/:idx`: 1-5.
   * `/api/notes/vn/:idx`: 1-15. `/api/user/:uid/notes`: 1-2.
+  * `/api/history/:day`: 2-3.
   * The snapshot id is memoized in each isolate for 60 s (2 rows).
   * The app requests `/api/meta` and `/api/catalogue` once at startup; every
     later page reuses them.
