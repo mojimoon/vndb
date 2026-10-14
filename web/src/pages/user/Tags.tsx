@@ -17,15 +17,14 @@ export default function UserTags() {
   const rows = useMemo<TagRow[]>(() => {
     if (data.state !== "ok" || !votes.length) return [];
     const [dict, tab] = data.data;
-    const acc = new Map<number, { n: number; sig: number; vote: number; spoiler: number }>();
+    const acc = new Map<number, { n: number; sig: number; vote: number }>();
     for (const v of votes) {
       const i = v.vn.idx;
       for (let k = tab.offsets[i]; k < tab.offsets[i + 1]; k++) {
-        const a = acc.get(tab.tag[k]) ?? { n: 0, sig: 0, vote: 0, spoiler: 2 };
+        const a = acc.get(tab.tag[k]) ?? { n: 0, sig: 0, vote: 0 };
         a.n++;
         a.sig += tab.rating[k];
         a.vote += v.vote;
-        a.spoiler = Math.min(a.spoiler, tab.spoiler[k]);
         acc.set(tab.tag[k], a);
       }
     }
@@ -33,7 +32,7 @@ export default function UserTags() {
     for (const [id, a] of acc) {
       const info = dict.byId.get(id);
       if (!info || info.idfVotes === null) continue;
-      out.push({ id, name: info.name, cat: info.cat, spoiler: a.spoiler, freq: a.n, sig: a.sig / a.n, mean: a.vote / a.n, score: (a.sig / votes.length) * info.idfVotes });
+      out.push({ id, name: info.name, cat: info.cat, spoiler: 0, freq: a.n, sig: a.sig / a.n, mean: a.vote / a.n, score: (a.sig / votes.length) * info.idfVotes });
     }
     return out;
   }, [data, votes]);
