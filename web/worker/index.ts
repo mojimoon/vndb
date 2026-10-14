@@ -284,10 +284,7 @@ app.get("/api/notes/vn/:idx{[0-9]+}", (c) =>
     const st = Number(q("st") ?? 0) || 0;
     const minv = Number(q("minv") ?? 0) || 0;
     const maxv = Number(q("maxv") ?? 0) || Infinity;
-    const rows: NoteRow[] = [];
-    for (const p of await parts(c.env.DB, "vn_notes", "shard", idx % VN_NOTE_SHARDS)) {
-      for (const r of JSON.parse(p) as NoteRow[]) if (r[0] === idx) rows.push(r);
-    }
+    const rows = await vnNotes(c.env.DB, idx);
     const total = rows.length;
     const hit = rows.filter((r) => (!st || (r[7] & st) !== 0) && r[8] >= minv && r[8] <= maxv);
     if (sort !== "date" || asc) {
@@ -308,6 +305,35 @@ app.get("/api/notes/vn/:idx{[0-9]+}", (c) =>
       pageSize: NOTES_PAGE,
       notes: slice.map(([, uid, name, vote, date, text, hasPage, labels, nvotes, sp]) => ({ uid, name, vote, date, text, hasPage, labels, nvotes, sp })),
     };
+  }),
+);
+
+async function vnNotes(db: D1Database, idx: number): Promise<NoteRow[]> {
+  const rows: NoteRow[] = [];
+  for (const p of await parts(db, "vn_notes", "shard", idx % VN_NOTE_SHARDS)) {
+    for (const r of JSON.parse(p) as NoteRow[]) if (r[0] === idx) rows.push(r);
+  }
+  return rows;
+}
+
+// GET /api/notes/both/:a/:b -> users who left a note on both VNs, with both notes
+// (newest of the two first). 2 note shards read; the page groups them by vote.
+app.get("/api/notes/both/:a{[0-9]+}/:b{[0-9]+}", (c) =>
+  cached(c, async () => {
+    const a = Number(c.req.param("a"));
+    const b = Number(c.req.param("b"));
+    const [ra, rb] = await Promise.all([vnNotes(c.env.DB, a), vnNotes(c.env.DB, b)]);
+    const byUid = new Map(rb.map((r) => [r[1], r]));
+    const note = ([, , , vote, date, text, , labels, , sp]: NoteRow) => ({ vote, date, text, labels, sp });
+    const pairs = ra
+      .filter((r) => byUid.has(r[1]))
+      .map((r) => {
+        const o = byUid.get(r[1])!;
+        return { uid: r[1], name: r[2], hasPage: r[6], nvotes: r[8], a: note(r), b: note(o), latest: Math.max(r[4], o[4]) };
+      })
+      .sort((x, y) => y.latest - x.latest)
+      .map(({ latest: _, ...p }) => p);
+    return { a, b, pairs };
   }),
 );
 

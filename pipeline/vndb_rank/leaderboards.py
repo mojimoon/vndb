@@ -2,7 +2,7 @@
 
 * ``most_votes``       most votes on any VN (VNDB's own count of a user's votes)
 * ``most_votes_year``  most votes cast in the dump's calendar year
-* ``highest_mean`` / ``lowest_mean``      mean vote, users with >= MIN_VOTES ranked votes
+* ``most_reviews``     most public list notes shown as reviews (ranked VNs, 20+ characters)
 * ``most_mainstream`` / ``most_contrarian`` Pearson r between a user's votes and
   each VN's mean vote, users with >= MIN_VOTES ranked votes
 
@@ -24,7 +24,6 @@ def build_leaderboards(votes: Votes, extras: Extras, names: dict[int, str], vn_m
     df = pd.DataFrame({"u": votes.uid, "v": votes.vote / 10, "m": vn_mean[votes.vidx]})
     g = df.groupby("u")
     n = g.size()
-    mean = g["v"].mean()
 
     big = n[n >= MIN_VOTES].index
     sub = df[df["u"].isin(big)]
@@ -43,13 +42,12 @@ def build_leaderboards(votes: Votes, extras: Extras, names: dict[int, str], vn_m
             for u, v in s.items()
         ]
 
-    big_mean = mean.loc[big]
+    reviews = extras.notes["uid"].value_counts() if len(extras.notes) else pd.Series(dtype=int)
     return {
         "min_votes": MIN_VOTES,
         "most_votes": entries(extras.user_total, False, 0),
         "most_votes_year": entries(extras.user_year, False, 0),
-        "highest_mean": entries(big_mean, False, 2),
-        "lowest_mean": entries(big_mean, True, 2),
+        "most_reviews": entries(reviews, False, 0),
         "most_mainstream": entries(r, False, 3),
         "most_contrarian": entries(r, True, 3),
     }

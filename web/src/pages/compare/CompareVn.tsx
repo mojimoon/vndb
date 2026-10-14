@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { all, useCatalogue, useJoint, useMeta, useVn, type Catalogue, type Meta, type VnDetail } from "../../lib/api";
+import { all, useBothNotes, useCatalogue, useJoint, useMeta, useVn, type Catalogue, type Meta, type NotePair, type VnDetail } from "../../lib/api";
 import { decileLabels, formatInt, pct, scoreLabels, titles, year } from "../../lib/format";
 import { methodName, useI18n } from "../../lib/i18n";
 import { Matrix, PairedBars } from "../../components/Charts";
 import { H2HBar } from "../../components/H2H";
 import { Status } from "../../components/Status";
 import { Card } from "../../components/VnLink";
+import { NoteCard, UserNameLink } from "../../components/NoteCard";
+import { useShowMore } from "../../components/ShowMore";
 
 export default function CompareVn() {
   const { a, b } = useParams();
@@ -164,9 +166,102 @@ function View({ x, y, featured }: { x: VnDetail; y: VnDetail; featured: string[]
           />
         </Card>
       )}
+
+      <BothReviews x={x} y={y} tx={tx} ty={ty} />
     </article>
   );
 }
 
 /** joint[a][b] -> rows = B (y axis), columns = A (x axis). */
 const transpose = (m: number[][]) => m[0].map((_, c) => m.map((row) => row[c]));
+
+/** Votes of 7 or more count as high (the 6.95 boundary on VNDB's 1-10 scale). */
+const HIGH = 70;
+const GROUPS = ["hh", "hl", "lh", "ll", "none"] as const;
+type Group = (typeof GROUPS)[number];
+const groupOf = (p: NotePair): Group =>
+  !p.a.vote || !p.b.vote ? "none" : `${p.a.vote >= HIGH ? "h" : "l"}${p.b.vote >= HIGH ? "h" : "l"}` as Group;
+
+/** Notes from users who reviewed both titles, grouped by whether each vote is high or low. */
+function BothReviews({ x, y, tx, ty }: { x: VnDetail; y: VnDetail; tx: string; ty: string }) {
+  const { t } = useI18n();
+  const res = useBothNotes(x.idx, y.idx);
+  const [pick, setPick] = useState<Group | null>(null);
+  const pairs = res.state === "ok" ? res.data.pairs : [];
+  const groups = Object.fromEntries(GROUPS.map((g) => [g, pairs.filter((p) => groupOf(p) === g)])) as Record<Group, NotePair[]>;
+  const group = pick ?? GROUPS.find((g) => groups[g].length) ?? "hh";
+  const chip = (g: Group) =>
+    g === "none" ? (
+      t("compare.noVote")
+    ) : (
+      <>
+        <Swatch i={0} /> {t(g[0] === "h" ? "compare.high" : "compare.low")} · <Swatch i={1} /> {t(g[1] === "h" ? "compare.high" : "compare.low")}
+      </>
+    );
+  const title = (
+    <span className="inline-flex items-center gap-1.5">
+      {t("compare.both")} · {chip(group)}
+    </span>
+  );
+  const list = (items: NotePair[]) => (
+    <ul className="space-y-4">
+      {items.map((p) => (
+        <li key={p.uid} className="space-y-1.5">
+          <div className="flex items-baseline gap-2 text-sm font-medium">
+            <UserNameLink uid={p.uid} name={p.name} hasPage={p.hasPage} />
+            <span className="text-xs font-normal text-ink-3">{t("notes.votesBy", { n: p.nvotes.toLocaleString() })}</span>
+          </div>
+          <ul className="grid gap-2 md:grid-cols-2">
+            {([[p.a, 0, tx], [p.b, 1, ty]] as const).map(([n, i, name]) => (
+              <NoteCard
+                key={i}
+                head={
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <Swatch i={i} />
+                    <span className="truncate">{name}</span>
+                  </span>
+                }
+                vote={n.vote}
+                date={n.date}
+                text={n.text}
+                labels={n.labels}
+              />
+            ))}
+          </ul>
+        </li>
+      ))}
+    </ul>
+  );
+  const [visible, more] = useShowMore(groups[group], 3, title, list);
+  return (
+    <Card title={t("compare.both")}>
+      {res.state !== "ok" ? (
+        <Status value={res} />
+      ) : !pairs.length ? (
+        <p className="text-sm text-ink-3">{t("compare.bothNone")}</p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-xs text-ink-2">{t("compare.bothHint")}</p>
+          <div className="flex flex-wrap gap-2" role="tablist">
+            {GROUPS.filter((g) => g !== "none" || groups.none.length).map((g) => (
+              <button
+                key={g}
+                type="button"
+                role="tab"
+                aria-selected={group === g}
+                disabled={!groups[g].length}
+                onClick={() => setPick(g)}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs disabled:opacity-40 ${group === g ? "border-accent bg-accent-soft text-ink" : "border-line bg-surface text-ink-2 hover:bg-surface-2"}`}
+              >
+                {chip(g)}
+                <span className="tabular font-semibold">{groups[g].length}</span>
+              </button>
+            ))}
+          </div>
+          {list(visible)}
+          {more}
+        </div>
+      )}
+    </Card>
+  );
+}
