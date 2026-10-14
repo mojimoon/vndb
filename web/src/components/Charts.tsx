@@ -368,12 +368,17 @@ export function RankLines({
   formatX,
   label,
   height = 200,
+  formatY = (r) => `#${r}`,
+  values = false,
 }: {
   points: { x: number; ys: (number | null)[] }[];
   names: string[];
   formatX: (x: number) => string;
   label: string;
   height?: number;
+  formatY?: (y: number) => string;
+  /** Plain values (higher on top) instead of ranks (#1 on top). */
+  values?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [ref, W] = useWidth();
@@ -383,14 +388,14 @@ export function RankLines({
   const padB = 22;
   const padT = 10;
   const all = points.flatMap((p) => p.ys.filter((y): y is number => y !== null));
-  const lo = Math.max(1, Math.min(...all));
-  const hi = Math.max(...all, lo + 1);
+  const lo = values ? Math.min(...all) : Math.max(1, Math.min(...all));
+  const hi = values ? Math.max(...all, lo + 1e-9) : Math.max(...all, lo + 1);
   const x0 = points[0].x;
   const x1 = Math.max(points[points.length - 1].x, x0 + 1);
   const px = (x: number) => padL + ((W - padL - 8) * (x - x0)) / (x1 - x0);
-  const py = (r: number) => padT + ((H - padB - padT) * (r - lo)) / (hi - lo);
+  const py = (r: number) => padT + ((H - padB - padT) * (values ? hi - r : r - lo)) / (hi - lo);
   const h = hover !== null ? points[hover] : null;
-  const ticks = [lo, Math.round((lo + hi) / 2), hi];
+  const ticks = values ? [lo, (lo + hi) / 2, hi] : [lo, Math.round((lo + hi) / 2), hi];
   return (
     <figure ref={ref as React.RefObject<HTMLElement>} className="space-y-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -399,7 +404,7 @@ export function RankLines({
           {h && (
             <>
               <span className="font-medium text-ink">{formatX(h.x)}</span>
-              {h.ys.map((y, i) => (y === null ? null : <span key={i}> · {names[i]} #{y}</span>))}
+              {h.ys.map((y, i) => (y === null ? null : <span key={i}> · {names[i]} {formatY(y)}</span>))}
             </>
           )}
         </div>
@@ -409,7 +414,7 @@ export function RankLines({
           <g key={r}>
             <line x1={padL} x2={W} y1={py(r)} y2={py(r)} stroke="var(--border)" strokeWidth={1} />
             <text x={padL - 6} y={py(r) + 4} textAnchor="end" fontSize={11} fill="var(--text-2)">
-              #{r}
+              {formatY(r)}
             </text>
           </g>
         ))}

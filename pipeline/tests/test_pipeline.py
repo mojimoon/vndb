@@ -13,7 +13,8 @@ from vndb_rank.__main__ import run
 from vndb_rank.config import Config
 from vndb_rank.cf import decode_votes
 from vndb_rank.export import insert_statements, MAX_STATEMENT_BYTES
-from vndb_rank.storage import fnv1a, merge_history, rank_trend
+from vndb_rank.storage import fnv1a
+from vndb_rank.history import HIST_DTYPE, decode_day, encode_day, keep_days, rank_trend
 from vndb_rank.extract import Votes, normalize_search, to_ten_scale
 from vndb_rank.methods import po_bradley_terry, po_classical, po_elo, po_entropy
 from vndb_rank.neighbors import build_neighbors
@@ -200,7 +201,12 @@ def test_vn_analysis_and_history(snapshot):
         assert sum(a["hist"]) == a["n"] > 0 and 1 <= a["mean"] <= 10
         assert sum(a["sp"]["hist"]) == a["n"] and 0 < a["sp"]["mean"] < 1
         h = json.loads(history)
-        assert h[-1] == [info["day"], json.loads(ranks)["borda_grand"][0], json.loads(ranks)["vndb"][0]]
+        assert h[-1][:3] == [info["day"], json.loads(ranks)["borda_grand"][0], json.loads(ranks)["vndb"][0]]
+    for vid, history, votes, rating in db.execute("SELECT id, history, votes, rating FROM vn LIMIT 20"):
+        day, _, _, r, v = json.loads(history)[-1]
+        assert v == votes and (r is None if rating is None else abs(r - rating) < 0.006)
+    assert info["history_days"] == [info["day"]]
+    assert [r[0] for r in db.execute("SELECT DISTINCT day FROM history_day")] == [info["day"]]
 
 
 def test_users_and_recommendations(snapshot):
@@ -240,16 +246,70 @@ def test_similar_items_are_valid(snapshot):
     assert nonempty > len(ids) * 0.5
 
 
+def _date(day):
+    import datetime as dt
+    return dt.date(2000, 1, 1) + dt.timedelta(days=day)
+
+
 def test_storage_helpers():
     assert fnv1a("a") == 0xE40C292C
     today = 10_000
-    hist = [[today - d, d, d] for d in range(800, 0, -1)]
-    merged = merge_history(hist, today, [1, 2])
-    assert merged[-1] == [today, 1, 2]
-    assert len([p for p in merged if today - p[0] <= 90]) == 91
-    assert all(today - p[0] <= 730 for p in merged)
+    kept = keep_days(set(range(today - 1000, today + 1)), today)
+    assert today in kept and all(today - d in {d2 for d2 in range(91)} or today - d > 90 for d in kept)
+    assert len([d for d in kept if today - d <= 90]) == 91
+    week_or_month = [d for d in kept if 90 < today - d <= 365]
+    assert 38 <= len(week_or_month) <= 53
+    old = sorted(d for d in kept if today - d > 365)
+    assert all(_date(d).day == 1 for d in old[1:]) and 20 <= len(old) <= 22  # old[0]: first day on record
+    # Thinning is stable: thinning again (a day later) never brings back or loses a monthly point.
+    again = keep_days(kept | {today + 1}, today + 1)
+    assert {d for d in old} <= again
     assert rank_trend([[today - 31, 10, 0], [today - 8, 7, 0], [today, 4, 0]], today) == 6
     assert rank_trend([[today - 8, 10, 0], [today, 4, 0]], today) is None
+
+
+def test_history_persists_across_snapshots(snapshot, tmp_path):
+    """The second refresh keeps earlier days (and titles no longer ranked), thins
+    old days in place and only rewrites today."""
+    sql, _, _ = snapshot
+    db = sqlite3.connect(":memory:")
+    db.executescript(sql.read_text())
+    info = json.loads(db.execute("SELECT value FROM meta WHERE key='info'").fetchone()[0])
+    today = info["day"]
+    (rec,) = [decode_day("".join(r[0] for r in db.execute("SELECT data FROM history_day WHERE day = ? ORDER BY part", (today,))))]
+    gone = np.zeros(1, dtype=HIST_DTYPE)
+    gone[0] = (999_999, 1, 1, 850, 1234)  # a title no longer ranked
+    past = [1, 2, 30, 31, 95, 96, 97, 400, 401, 402]
+    for k in past:
+        db.execute("INSERT INTO history_day VALUES (?, 0, ?)", (today - k, encode_day(np.concatenate([rec, gone]))))
+    rows = [{"day": d, "part": p, "data": x} for d, p, x in db.execute("SELECT day, part, data FROM history_day")]
+    (tmp_path / "h.json").write_text(json.dumps([{"results": rows}]))
+    run(make_fake_dump(tmp_path / "dump", n_vns=150, n_users=1500, seed=7), tmp_path / "out", Config(skip_users=True, skip_notes=True), tmp_path / "h.json")
+    db.executescript((tmp_path / "out" / "snapshot.sql").read_text())
+    stored = {d for (d,) in db.execute("SELECT DISTINCT day FROM history_day")}
+    assert stored == keep_days({today, *(today - k for k in past)}, today)
+    assert {today - k for k in past if k <= 90} <= stored and len(stored) < len(past) + 1  # something old was thinned
+    info = json.loads(db.execute("SELECT value FROM meta WHERE key='info'").fetchone()[0])
+    assert info["history_days"] == sorted(stored)
+    assert 999_999 in decode_day(db.execute("SELECT data FROM history_day WHERE day = ?", (today - 1,)).fetchone()[0])["vid"]
+    vid, hist, trend = db.execute("SELECT id, history, trend FROM vn WHERE id = ?", (int(rec["vid"][5]),)).fetchone()
+    h = json.loads(hist)
+    assert [p[0] for p in h] == sorted(stored) and trend == 0
+
+
+def test_history_from_legacy_column(snapshot, tmp_path):
+    sql, _, db = snapshot
+    info = json.loads(db.execute("SELECT value FROM meta WHERE key='info'").fetchone()[0])
+    today = info["day"]
+    vid = db.execute("SELECT id FROM vn LIMIT 1").fetchone()[0]
+    (tmp_path / "legacy.json").write_text(json.dumps([{"results": [{"id": vid, "history": json.dumps([[today - 40, 50, 60], [today - 3, 20, 30]])}]}]))
+    run(make_fake_dump(tmp_path / "dump", n_vns=150, n_users=1500, seed=7), tmp_path / "out", Config(skip_users=True, skip_notes=True), None, tmp_path / "legacy.json")
+    db2 = sqlite3.connect(":memory:")
+    db2.executescript((tmp_path / "out" / "snapshot.sql").read_text())
+    h, trend = db2.execute("SELECT history, trend FROM vn WHERE id = ?", (vid,)).fetchone()
+    h = json.loads(h)
+    assert h[0] == [today - 40, 50, 60, None, None] and h[1] == [today - 3, 20, 30, None, None]
+    assert trend == 50 - h[-1][1]
 
 
 def _doc(db, key):

@@ -66,7 +66,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Fetch previous rank history from D1
+      - name: Fetch rank history from D1
         if: env.HAS_CLOUDFLARE == 'true'
         working-directory: web
         env:
@@ -74,16 +74,26 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           npm ci
-          # ~8k rows read; fails harmlessly before the first import.
-          npx wrangler d1 execute vndb --remote --json --command "SELECT id, history FROM vn" > ../history.json \
-            || echo "[]" > ../history.json
-          ls -la ../history.json
+          # Fails the run on any error except "no such table" (first import / migration).
+          ../.github/scripts/fetch-history.sh ..
+
+      # The only copy of past days outside D1: restore with --history if D1 is ever lost.
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_CLOUDFLARE == 'true'
+        with:
+          name: history-backup
+          path: |
+            history.json
+            legacy-history.json
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Compute rankings
         working-directory: pipeline
         run: |
           args=(--dump ../dump --out out)
           if [ -f ../history.json ]; then args+=(--history ../history.json); fi
+          if [ -f ../legacy-history.json ]; then args+=(--legacy-history ../legacy-history.json); fi
           if [ "${{ inputs.skip_rankit }}" = "true" ]; then args+=(--skip-rankit); fi
           python -m vndb_rank "${args[@]}"
           ls -la out; cat out/summary.json

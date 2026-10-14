@@ -1,9 +1,10 @@
 import { Link } from "react-router";
 import { dayToDate, formatScore } from "../../lib/format";
 import { methodGroup, methodName, rankerName, variableName, useI18n, RANKER_CODES, VARIABLE_CODES, type MethodGroup, type StringKey } from "../../lib/i18n";
-import { RankLines } from "../../components/Charts";
+import { compact, RankLines } from "../../components/Charts";
 import { Card } from "../../components/VnLink";
 import { useVnContext } from "./VnLayout";
+import type { VnDetail } from "../../lib/api";
 
 
 export default function Ranks() {
@@ -21,7 +22,7 @@ export default function Ranks() {
           <>
             <p className="mb-2 text-xs text-ink-3">{t("vn.historyHint")}</p>
             <RankLines
-              points={vn.history.map(([d, ...ys]) => ({ x: d, ys }))}
+              points={vn.history.map(([d, rank, vndbRank]) => ({ x: d, ys: [rank, vndbRank] }))}
               names={histMethods.map((m) => methodName(m, lang))}
               formatX={dayToDate}
               label={t("vn.history")}
@@ -31,6 +32,7 @@ export default function Ranks() {
           <p className="text-sm text-ink-3">{t("vn.historyEmpty")}</p>
         )}
       </Card>
+      <VndbHistory history={vn.history} />
       {/* Merged rankings on the left; PONet and the VNDB rating (reference) on the right. */}
       <div className="grid items-start gap-4 md:grid-cols-2">
         <GroupTable group="merged" codes={codes} vn={vn} scale={scale} />
@@ -41,6 +43,38 @@ export default function Ranks() {
       </div>
       <RankitTable vn={vn} scale={scale} />
     </div>
+  );
+}
+
+/** VNDB rating and votes over time (recorded since they were added to the history). */
+function VndbHistory({ history }: { history: VnDetail["history"] }) {
+  const { t } = useI18n();
+  const pts = history.filter((p) => p[3] != null || p[4] != null);
+  if (pts.length < 2) return null;
+  return (
+    <Card title={t("vn.ratingHistory")}>
+      <p className="mb-2 text-xs text-ink-3">{t("vn.ratingHistoryHint")}</p>
+      <div className="grid gap-4 md:grid-cols-2">
+        <RankLines
+          points={pts.map((p) => ({ x: p[0], ys: [p[3] ?? null] }))}
+          names={[t("vn.rating")]}
+          formatX={dayToDate}
+          formatY={(v) => v.toFixed(2)}
+          values
+          height={160}
+          label={t("vn.rating")}
+        />
+        <RankLines
+          points={pts.map((p) => ({ x: p[0], ys: [p[4] ?? null] }))}
+          names={[t("rank.col.votes")]}
+          formatX={dayToDate}
+          formatY={(v) => (v >= 10_000 ? compact(v) : Math.round(v).toLocaleString())}
+          values
+          height={160}
+          label={t("rank.col.votes")}
+        />
+      </div>
+    </Card>
   );
 }
 

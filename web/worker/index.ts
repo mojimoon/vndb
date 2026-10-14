@@ -203,6 +203,25 @@ app.get("/api/vntags", (c) =>
   }),
 );
 
+// GET /api/history/:day -> binary history.HIST_DTYPE records of every VN ranked that day
+// (days listed in meta info.history_days). ~3 rows read.
+app.get("/api/history/:day{[0-9]+}", (c) =>
+  cached(c, async () => {
+    let p: string[];
+    try {
+      p = await parts(c.env.DB, "history_day", "day", Number(c.req.param("day")));
+    } catch (e) {
+      if (String(e).includes("no such table")) return null;
+      throw e;
+    }
+    if (!p.length) return null;
+    const bin = atob(p.join(""));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }),
+);
+
 // GET /api/ranks?m=<method> -> {method, ranks: [[id, rank, score], ...]} (prebuilt).
 app.get("/api/ranks", async (c) => {
   const m = c.get("meta");

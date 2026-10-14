@@ -11,6 +11,7 @@ import RankTable from "./pages/ranking/RankTable";
 import Years from "./pages/ranking/Years";
 import Disputes from "./pages/ranking/Disputes";
 import Movers from "./pages/ranking/Movers";
+import RankHistory from "./pages/ranking/History";
 import VnTags from "./pages/vn/Tags";
 import UserTags from "./pages/user/Tags";
 import VnLayout from "./pages/vn/VnLayout";
@@ -51,6 +52,7 @@ const router = createBrowserRouter([
           { path: "years", element: <Years /> },
           { path: "disputes", element: <Disputes /> },
           { path: "movers", element: <Movers /> },
+          { path: "history", element: <RankHistory /> },
         ],
       },
       {
