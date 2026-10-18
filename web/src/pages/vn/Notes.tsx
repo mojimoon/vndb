@@ -11,7 +11,7 @@ import { useVnContext } from "./VnLayout";
 
 const SORTS = ["date", "vote", "sp"] as const;
 
-/** Reviews (list notes) of one VN; sorting and filtering run in the worker. */
+/** List notes of one VN; sorting and filtering run in the worker. */
 export default function Notes() {
   const { t } = useI18n();
   const { vn } = useVnContext();

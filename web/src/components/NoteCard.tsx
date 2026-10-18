@@ -4,7 +4,7 @@ import { useI18n } from "../lib/i18n";
 
 const LONG = 400;
 
-/** One list note ("short review"): author / title line, vote, list status, date, expandable text. */
+/** One list note: author / title line, vote, list status, date, expandable text. */
 export function NoteCard({ head, vote, date, text, labels = 0, extra }: { head: React.ReactNode; vote: number; date: number; text: string; labels?: number; extra?: React.ReactNode }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);

@@ -40,10 +40,10 @@ $$\text{sp}(x_k) = \frac{|\{x_i \mid x_i < x_k\}| + 0.5 \cdot |\{x_i \ (i \neq k
 ## Features
 
 - **Ranking**: any of the 41 methods, side by side with up to 3 others; custom columns, CSV export; filters by developer, year, language, length, votes and VNDB rating. Tabs for best by year, disagreements with VNDB, movers, and history (the ranking on any recorded day and the change since).
-- **Title pages**: overview, rating analysis with voter filters, rank by every method, rank history and VNDB rating / votes over time, head-to-head against any title, similar titles, reviews (public list notes) and a TF-IDF tag analysis.
-- **Developers**: developer leaderboard (titles, best / median rank, mean rating), developer pages and developer comparisons.
-- **Users**: user leaderboards, taste analysis, all votes, recommendations from similar users, similar users, reviews and tag preferences. Users with at least 5 votes on ranked titles get a page.
-- **Compare**: two titles (head-to-head, distributions, joint vote matrix, reviews by people who reviewed both) or two users (raw score / percentile scatter, disagreements, shared favourites).
+- **Title pages**: overview, rating analysis with voter filters, rank by every method, rank history and VNDB rating / votes over time, head-to-head against any title, similar titles, list notes and a TF-IDF tag analysis.
+- **Developers**: developer leaderboard (titles, best / median rank, mean rating), developer pages with a TF-IDF tag analysis of their titles, and developer comparisons.
+- **Users**: user leaderboards, taste analysis, all votes, recommendations from similar users, similar users, list notes and tag preferences. Users with at least 5 votes on ranked titles get a page.
+- **Compare**: two titles (head-to-head, distributions, joint vote matrix, notes by people who wrote on both, grouped by high / low votes) or two users (raw score / percentile scatter, disagreements, shared favourites).
 - Chinese, English and Japanese UI; light and dark themes.
 
 ## Usage

@@ -2,7 +2,7 @@
 
 * ``most_votes``       most votes on any VN (VNDB's own count of a user's votes)
 * ``most_votes_year``  most votes cast in the dump's calendar year
-* ``most_reviews``     most public list notes shown as reviews (ranked VNs, 20+ characters)
+* ``most_reviews``     most list notes shown on the site (extract.load_votes filters them)
 * ``most_mainstream`` / ``most_contrarian`` Pearson r between a user's votes and
   each VN's mean vote, users with >= MIN_VOTES ranked votes
 

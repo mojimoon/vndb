@@ -304,11 +304,40 @@ class Extras:
     """Side products of the ulist_vns pass."""
     user_total: pd.Series   # uid -> votes on any VN
     user_year: pd.Series    # uid -> votes cast in the dump's year
-    notes: pd.DataFrame     # uid, vidx, date (YYYYMMDD), vote (or 0), labels (bit mask), text; ranked VNs only
+    notes: pd.DataFrame     # uid, vidx, date (YYYYMMDD), vote, labels (bit mask), text; ranked VNs only
 
 
-NOTE_MIN_CHARS = 20
+# Which list notes are kept (see docs/architecture.md, Notes). On the 2026-10-18
+# dump: 120k notes of >= 20 characters, 65k after these rules.
+#  * Only on titles the user voted on: notes on unvoted titles are mostly
+#    wishlist priorities, blacklist reasons ("yaoi", "too old for me") or
+#    inventory ("in my Eastern folder"), not opinions on something they read.
+#  * At least NOTE_MIN_CHARS characters once links are removed; CJK characters
+#    count double, since they carry about twice the information.
+#  * Not a template: text the same user put on NOTE_TEMPLATE or more titles
+#    ("eng", "waiting for translation"), nor VNDB's automated merge notes.
+NOTE_MIN_CHARS = 40
 NOTE_MAX_CHARS = 3000
+NOTE_TEMPLATE = 3
+_URL = r"https?://\S+"
+_WIDE = "[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]"  # not raw: RE2 (pyarrow strings) has no \u escapes
+_AUTO = r"^\(This is an automated vote"
+
+
+def note_length(text: pd.Series) -> pd.Series:
+    """Characters without links, CJK counted double."""
+    bare = text.str.replace(_URL, "", regex=True).str.strip()
+    return bare.str.len() + bare.str.count(_WIDE)
+
+
+def filter_notes(notes: pd.DataFrame) -> pd.DataFrame:
+    """Drop templated notes (same user, same text on >= NOTE_TEMPLATE titles) and VNDB's automated ones."""
+    if not len(notes):
+        return notes
+    norm = notes["text"].str.lower().str.replace(r"\s+", " ", regex=True)
+    reuse = notes.groupby([notes["uid"], norm])["vidx"].transform("size")
+    auto = notes["text"].str.contains(_AUTO, case=False, regex=True)
+    return notes[(reuse < NOTE_TEMPLATE) & ~auto].reset_index(drop=True)
 
 
 def load_votes(
@@ -351,11 +380,12 @@ def load_votes(
                 np.add.at(vn_labels[:, k], ranked_idx[has[ranked]], 1)
                 lmask |= (has.astype(np.uint8) << (k - 1)).astype(np.uint8)
         if "notes" in chunk:
-            has_note = chunk["notes"].notna() & chunk_vidx.notna()
+            voted = pd.to_numeric(chunk["vote"], errors="coerce").notna()
+            has_note = chunk["notes"].notna() & chunk_vidx.notna() & voted
             if has_note.any():
                 nt = chunk.loc[has_note, ["uid", "notes"]].copy()
                 nt["text"] = nt["notes"].map(unescape).str.strip()
-                nt = nt[nt["text"].str.len() >= NOTE_MIN_CHARS]
+                nt = nt[note_length(nt["text"]) >= NOTE_MIN_CHARS]
                 if len(nt):
                     date_col = chunk.loc[nt.index, "lastmod"] if "lastmod" in chunk else pd.Series("", index=nt.index)
                     note_parts.append(pd.DataFrame({
@@ -422,9 +452,9 @@ def load_votes(
         "ranked_users": int(len(np.unique(uid))),
     }
     merge = lambda parts: pd.concat(parts).groupby(level=0).sum() if parts else pd.Series(dtype=np.int64)
-    notes = pd.concat(note_parts, ignore_index=True) if note_parts else pd.DataFrame(columns=["uid", "vidx", "date", "vote", "labels", "text"])
+    notes = filter_notes(pd.concat(note_parts, ignore_index=True)) if note_parts else pd.DataFrame(columns=["uid", "vidx", "date", "vote", "labels", "text"])
     extras = Extras(user_total=merge(total_parts), user_year=merge(year_count_parts), notes=notes)
-    log.info("notes: %d (>= %d chars) on ranked VNs", len(notes), NOTE_MIN_CHARS)
+    log.info("notes: %d on ranked VNs (voted, >= %d chars, no templates)", len(notes), NOTE_MIN_CHARS)
     return votes, stats, vn_labels, extras
 
 

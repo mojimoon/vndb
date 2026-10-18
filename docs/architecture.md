@@ -112,14 +112,24 @@ Design choices:
 * **The raw data stays offline.** Votes and the N² matrices live only in the
   pipeline's memory (a few GB on a 16 GB GitHub runner).
 
-### Notes ("reviews")
+### Notes
 
-The dump carries the free-text notes of public user lists. On ranked VNs there
-are 160k non-empty notes (16.9 MB); the 105k with at least 20 characters are
-kept (capped at 3,000 characters each). They are stored twice, by VN and by
-user, which costs ~33 MB and ~2k row writes per day, and are only fetched when
-a reviews tab is opened. The Worker sorts (time, rating, sample percentile)
-and filters (list labels, the author's vote count) a VN's reviews before
+The dump carries the free-text notes of public user lists (VNDB's own reviews
+are neither in the dump nor in the API). Many notes are not opinions: on the
+2026-10-18 dump the user with the most notes had 86% of them on blacklisted
+titles ("yaoi", "too old for me"), others keep wishlist priorities or where a
+file is installed. `extract.load_votes` therefore keeps a note only if
+
+* the user voted on the title,
+* it has at least 40 characters once links are removed (CJK characters count
+  double), and
+* it is not a template: the same user did not put the same text on 3 or more
+  titles, and it is not one of VNDB's automated merge notes.
+
+That keeps 65k of the 120k notes of 20+ characters (capped at 3,000 characters
+each). They are stored twice, by VN and by user, and are only fetched when a
+notes tab is opened. The Worker sorts (time, rating, sample percentile)
+and filters (list labels, the author's vote count) a VN's notes before
 paging, so every query costs the same shard read and is cached on its own.
 Pass `--skip-notes` to the pipeline to leave them out.
 

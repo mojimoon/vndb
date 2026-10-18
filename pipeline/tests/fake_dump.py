@@ -53,7 +53,14 @@ def make_fake_dump(out: Path, n_vns: int = 300, n_users: int = 2000, seed: int =
                 vdate = f"{rng.integers(2008, 2027)}-{rng.integers(1, 13):02d}-{rng.integers(1, 29):02d}"
                 counts[v] += 1
             labels = "{" + ",".join(sorted({str(rng.integers(1, 6)), "7"} if vote != "\\N" else {str(rng.integers(1, 6))})) + "}"
-            notes = "\\N" if rng.random() < 0.8 else "great\\tstory\\nwould read again"
+            # Notes: mostly unique opinions; some short, some a per-user template ("eng" on every title).
+            r = rng.random()
+            notes = (
+                "\\N" if r < 0.8
+                else f"great\\tstory, route {rng.integers(1, 99)} was the best\\nwould read again" if r < 0.94
+                else "too short" if r < 0.97
+                else f"template note {u} copied onto every single title"
+            )
             ulist.append([f"u{u}", f"v{v + 1}", "2020-01-01", "2020-01-02", vdate, "\\N", "\\N", vote, notes, labels])
     _write(db, "ulist_vns", ["uid", "vid", "added", "lastmod", "vote_date", "started", "finished", "vote", "notes", "labels"], ulist)
 

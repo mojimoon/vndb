@@ -15,6 +15,9 @@ export interface TagRow {
   mean?: number; // user page: the user's mean vote (1-10) on titles with the tag
 }
 
+/** vn: one title (spoilers, voters); user / dev: summed over a user's votes or a developer's titles. */
+export type TagKind = "vn" | "user" | "dev";
+
 type Key = "name" | "cat" | "freq" | "sig" | "voters" | "mean" | "score";
 
 const CLOUD = 35;
@@ -27,7 +30,7 @@ const tagUrl = (id: number) => `https://vndb.org/g${id}`;
  * title page the table's spoiler setting also applies to the cloud; user pages
  * have no spoiler levels (a tag summed over many titles spoils none of them).
  */
-export function TagAnalysis({ rows, kind, hint }: { rows: TagRow[]; kind: "vn" | "user"; hint: React.ReactNode }) {
+export function TagAnalysis({ rows, kind, hint }: { rows: TagRow[]; kind: TagKind; hint: React.ReactNode }) {
   const { t } = useI18n();
   const [spoil, setSpoil] = useState(0);
   const level = kind === "vn" ? spoil : 2;
@@ -128,7 +131,7 @@ export function SpoilerMark({ level }: { level: number }) {
   );
 }
 
-function TagTable({ rows, kind, hint, spoil, setSpoil }: { rows: TagRow[]; kind: "vn" | "user"; hint: React.ReactNode; spoil: number; setSpoil: (s: number) => void }) {
+function TagTable({ rows, kind, hint, spoil, setSpoil }: { rows: TagRow[]; kind: TagKind; hint: React.ReactNode; spoil: number; setSpoil: (s: number) => void }) {
   const { t } = useI18n();
   // Default as on VNDB: content + technical, no spoilers.
   const [cats, setCats] = useState<number[]>([0, 2]);
@@ -150,7 +153,7 @@ function TagTable({ rows, kind, hint, spoil, setSpoil }: { rows: TagRow[]; kind:
     ["cat", "tags.col.cat", false],
     ["freq", kind === "vn" ? "tags.col.freq" : "tags.col.titles", true],
     ["sig", "tags.col.sig", true],
-    kind === "vn" ? ["voters", "tags.col.voters", true] : ["mean", "tags.col.mean", true],
+    kind === "vn" ? ["voters", "tags.col.voters", true] : ["mean", kind === "dev" ? "tags.col.meanRating" : "tags.col.mean", true],
     ["score", "tags.col.score", true],
   ];
   const head = (k: Key, label: StringKey, num: boolean) => (

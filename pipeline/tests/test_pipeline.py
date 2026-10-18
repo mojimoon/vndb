@@ -362,10 +362,12 @@ def test_voter_shards_give_exact_joint_counts(snapshot):
 def test_notes_and_leaderboards(snapshot):
     _, summary, db = snapshot
     rows = [r for (d,) in db.execute("SELECT data FROM vn_notes") for r in json.loads(d)]
-    assert rows and all(len(r[5]) >= 20 and len(r) == 10 for r in rows)
+    assert rows and all(len(r[5]) >= 40 and len(r) == 10 and r[3] > 0 for r in rows)  # voted, long enough
+    assert not any(r[5] == "too short" for r in rows)
+    reuse = pd.Series([(r[1], r[5]) for r in rows]).value_counts()
+    assert reuse.max() < 3  # a text the same user put on 3+ titles is a template
     assert all(0 <= r[7] < 64 and r[8] >= 0 and (r[9] is None or 0 <= r[9] <= 100) for r in rows)
     assert any(r[7] for r in rows) and any(r[9] is not None for r in rows)
-    assert all(r[9] is None for r in rows if r[3] == 0)  # no vote, no percentile
     users = [r for (d,) in db.execute("SELECT data FROM user_notes") for r in json.loads(d)]
     assert 0 < len(users) <= len(rows) and all(len(r) == 7 for r in users)
     lb = json.loads(db.execute("SELECT value FROM meta WHERE key='leaderboards'").fetchone()[0])

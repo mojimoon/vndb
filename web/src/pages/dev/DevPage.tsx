@@ -8,6 +8,7 @@ import { Status } from "../../components/Status";
 import { Card, Stat, VnLink } from "../../components/VnLink";
 import { CompareTable } from "../compare/CompareVn";
 import { percentileAmong, useDevStats, type DevKey, type DevStats } from "./data";
+import { DevTags } from "./DevTags";
 
 const PEER_MIN = 3; // compare against developers with at least this many ranked VNs
 
@@ -93,6 +94,7 @@ export default function DevPage() {
       </div>
 
       <VnTable d={d} />
+      <DevTags d={d} />
     </article>
   );
 }
