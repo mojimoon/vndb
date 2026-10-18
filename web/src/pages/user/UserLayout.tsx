@@ -95,6 +95,7 @@ export default function UserLayout() {
       </header>
       <Tabs
         base={base}
+        title={ctx.user.name || `u${ctx.user.uid}`}
         tabs={[
           { path: "", label: t("user.tab.overview") },
           { path: "votes", label: `${t("user.tab.votes")} (${ctx.votes.length})` },

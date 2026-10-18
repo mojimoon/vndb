@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { normalizeQuery } from "../../lib/format";
 import { methodName, useI18n } from "../../lib/i18n";
+import { Title } from "../../components/Title";
 import { useShowMore } from "../../components/ShowMore";
 import { Status } from "../../components/Status";
 import { LOWER_IS_BETTER, useDevStats, type DevKey, type DevStats } from "./data";
@@ -38,6 +39,7 @@ export default function DevList() {
     <div className="space-y-4">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t("dev.title")}</h1>
+        <Title parts={[t("dev.title")]} />
         <p className="mt-1 text-sm text-ink-2">{t("dev.hint", { m: methodName(stats.data.method, lang) })}</p>
       </header>
       <div className="flex flex-wrap items-center gap-2">

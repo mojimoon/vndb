@@ -1,8 +1,11 @@
 import { NavLink, useLocation } from "react-router";
+import { Title } from "./Title";
 
-/** URL-backed tabs: each tab is a sub-path; the query string is kept when switching. */
-export function Tabs({ base, tabs }: { base: string; tabs: { path: string; label: string }[] }) {
-  const { search } = useLocation();
+/** URL-backed tabs: each tab is a sub-path; the query string is kept when switching.
+ *  The page title becomes "active tab · title". */
+export function Tabs({ base, tabs, title }: { base: string; tabs: { path: string; label: string }[]; title: string }) {
+  const { search, pathname } = useLocation();
+  const active = tabs.find((t) => (t.path ? `${base}/${t.path}` : base || "/") === pathname.replace(/(.)\/$/, "$1"));
   return (
     <nav className="-mx-4 overflow-x-auto overflow-y-hidden px-4" aria-label="tabs">
       <div className="flex min-w-max gap-1 border-b border-line">
@@ -21,6 +24,7 @@ export function Tabs({ base, tabs }: { base: string; tabs: { path: string; label
           </NavLink>
         ))}
       </div>
+      <Title parts={[active?.label.replace(/ \(\d+\)$/, ""), title]} />
     </nav>
   );
 }

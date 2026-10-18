@@ -5,6 +5,7 @@ import { langName, methodName, useI18n } from "../../lib/i18n";
 import { BarChart } from "../../components/Charts";
 import { useShowMore } from "../../components/ShowMore";
 import { Status } from "../../components/Status";
+import { Title } from "../../components/Title";
 import { Card, Stat, VnLink } from "../../components/VnLink";
 import { CompareTable } from "../compare/CompareVn";
 import { percentileAmong, useDevStats, type DevKey, type DevStats } from "./data";
@@ -43,6 +44,7 @@ export default function DevPage() {
             /
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">{name(d)}</h1>
+          <Title parts={[name(d), t("dev.title")]} />
           {d.name && d.latin && lang !== "ja" && <p className="text-ink-2">{lang === "en" ? d.name : d.latin}</p>}
         </div>
         <div className="flex gap-4 text-sm">

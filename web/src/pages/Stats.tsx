@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMeta } from "../lib/api";
 import { formatInt } from "../lib/format";
 import { useI18n } from "../lib/i18n";
+import { Title } from "../components/Title";
 import { BarChart, cumulativeLine } from "../components/Charts";
 import { Status } from "../components/Status";
 
@@ -27,6 +28,7 @@ export default function Stats() {
       <header className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t("stats.title")}</h1>
+          <Title parts={[t("stats.title")]} />
           <p className="mt-1 text-sm text-ink-2">{meta.data.info.dump_date}</p>
         </div>
         <div className="flex rounded-md border border-line bg-surface p-0.5 text-sm">

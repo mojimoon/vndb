@@ -5,6 +5,7 @@ import {
   methodDesc, methodGroup, methodName, methodShort, rankerName, variableName, useI18n,
   RANKER_CODES, VARIABLE_CODES, type Lang, type MethodGroup, type StringKey,
 } from "../lib/i18n";
+import { Title } from "../components/Title";
 import { Status } from "../components/Status";
 
 const INTRO: Record<Lang, string[]> = {
@@ -38,6 +39,7 @@ export default function Methods() {
     <div className="space-y-10">
       <section className="max-w-3xl space-y-3">
         <h1 className="text-2xl font-semibold tracking-tight">{t("methods.title")}</h1>
+        <Title parts={[t("methods.title")]} />
         {INTRO[lang].map((p) => (
           <p key={p.slice(0, 20)} className="leading-relaxed text-ink-2">
             {p}

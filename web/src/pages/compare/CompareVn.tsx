@@ -6,6 +6,7 @@ import { methodName, useI18n } from "../../lib/i18n";
 import { Matrix, PairedBars } from "../../components/Charts";
 import { H2HBar } from "../../components/H2H";
 import { Status } from "../../components/Status";
+import { Title } from "../../components/Title";
 import { Card } from "../../components/VnLink";
 import { NoteCard, UserNameLink } from "../../components/NoteCard";
 import { useShowMore } from "../../components/ShowMore";
@@ -101,6 +102,7 @@ function View({ x, y, featured }: { x: VnDetail; y: VnDetail; featured: string[]
 
   return (
     <article className="space-y-5">
+      <Title parts={[`${tx} vs ${ty}`]} />
       <CompareHeader a={tx} b={ty} hrefA={`/vn/${x.id}`} hrefB={`/vn/${y.id}`} swap={`/compare/vn/${y.id}/${x.id}`} />
 
       <Card title={t("compare.h2h")}>

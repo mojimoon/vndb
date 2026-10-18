@@ -18,7 +18,7 @@ export default function VnLayout() {
   const vn = useVn(Number(id));
   const meta = useMeta();
   const cat = useCatalogue();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const both = all<[VnDetail, Meta, Catalogue]>(vn, meta, cat);
   if (both.state !== "ok") return <Status value={both} />;
   const [v, m, c] = both.data;
@@ -28,6 +28,7 @@ export default function VnLayout() {
       <Header vn={v} item={c.byId.get(v.id)} />
       <Tabs
         base={base}
+        title={titles(v, lang).main}
         tabs={[
           { path: "", label: t("vn.tab.overview") },
           { path: "ratings", label: t("vn.tab.ratings") },

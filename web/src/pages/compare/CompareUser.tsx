@@ -8,6 +8,7 @@ import { Modal } from "../../components/Modal";
 import { NoteCard } from "../../components/NoteCard";
 import { useShowMore } from "../../components/ShowMore";
 import { Status } from "../../components/Status";
+import { Title } from "../../components/Title";
 import { Card, Stat, VnLink } from "../../components/VnLink";
 import { joinVotes, summarize } from "../user/UserLayout";
 import { CompareHeader, CompareTable } from "./CompareVn";
@@ -106,6 +107,7 @@ function View({ x, y, cat }: { x: UserData; y: UserData; cat: Catalogue }) {
 
   return (
     <article className="space-y-5">
+      <Title parts={[`${nx} vs ${ny}`]} />
       <CompareHeader a={nx} b={ny} hrefA={`/user/${x.uid}`} hrefB={`/user/${y.uid}`} swap={`/compare/user/${y.uid}/${x.uid}`} />
 
       <div className="flex justify-center">

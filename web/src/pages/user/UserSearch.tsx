@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { fetchJson, useMeta, type LeaderEntry, type Meta } from "../../lib/api";
 import { useI18n, type StringKey } from "../../lib/i18n";
+import { Title } from "../../components/Title";
 import { useShowMore } from "../../components/ShowMore";
 
 /** "u123", "123", a vndb.org/u123 URL, or a username. */
@@ -61,6 +62,7 @@ export default function UserSearch() {
     <div className="space-y-8">
       <section className="mx-auto max-w-xl space-y-4 pt-4">
         <h1 className="text-2xl font-semibold tracking-tight">{t("user.search.title")}</h1>
+        <Title parts={[t("user.search.title")]} />
         <p className="text-sm text-ink-2">{t("user.search.hint", { n: min })}</p>
         <UserInput
           onResolved={async (uid) => {

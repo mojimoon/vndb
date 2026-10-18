@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useCatalogue, type CatalogueItem } from "../../lib/api";
 import { titles } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
+import { Title } from "../../components/Title";
 import { VnPicker } from "../../components/VnPicker";
 import { UserInput } from "../user/UserSearch";
 
@@ -30,6 +31,7 @@ export default function ComparePicker() {
   return (
     <div className="mx-auto max-w-2xl space-y-5 py-4">
       <h1 className="text-2xl font-semibold tracking-tight">{t("compare.title")}</h1>
+      <Title parts={[t("compare.title")]} />
       <p className="text-sm text-ink-2">{t("compare.hint")}</p>
       <div className="inline-flex rounded-md border border-line bg-surface p-0.5 text-sm">
         {(["vn", "user"] as const).map((k) => (

@@ -133,6 +133,7 @@ export default function RankingLayout() {
 
       <Tabs
         base=""
+        title={t("nav.ranking")}
         tabs={[
           { path: "", label: t("rank.tab.table") },
           { path: "years", label: t("rank.tab.years") },
