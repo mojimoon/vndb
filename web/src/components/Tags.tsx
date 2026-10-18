@@ -194,7 +194,7 @@ function TagTable({ rows, kind, hint, spoil, setSpoil }: { rows: TagRow[]; kind:
         )}
         <span className="tabular ml-auto text-ink-3">{t("tags.count", { n: shown.length, total: rows.length })}</span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto overflow-y-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-line text-left text-xs text-ink-3">
             <tr>{cols.map(([k, label, num]) => head(k, label, num))}</tr>

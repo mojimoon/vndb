@@ -59,7 +59,7 @@ export default function DevList() {
 
   function table(items: DevStats[]) {
     return (
-      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+      <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-line bg-surface">
         <table className="w-full text-sm">
           <thead className="whitespace-nowrap border-b border-line text-left text-xs text-ink-2">
             <tr>

@@ -112,7 +112,7 @@ export default function History() {
             <h2 className="text-sm font-semibold">{dayToDate(day!)}</h2>
             <span className="tabular text-xs text-ink-3">{t("rank.history.count", { n: list.length.toLocaleString(), total: hist.data.n.toLocaleString() })}</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-hidden">
             <table className="w-full text-sm">
               <thead className="border-b border-line text-left text-xs text-ink-3">
                 <tr>

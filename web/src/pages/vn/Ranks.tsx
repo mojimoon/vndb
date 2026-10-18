@@ -114,7 +114,7 @@ function RankitTable({ vn, scale }: { vn: Ranked; scale: RankScale }) {
   if (!vars.length) return null;
 
   return (
-    <section className="overflow-x-auto rounded-lg border border-line bg-surface">
+    <section className="overflow-x-auto overflow-y-hidden rounded-lg border border-line bg-surface">
       <table className="w-full min-w-[640px] text-sm">
         <caption className="px-3 pt-2 text-left text-xs font-medium text-ink-3">{t("methods.group.rankit")}</caption>
         <thead className="text-left text-xs text-ink-3">

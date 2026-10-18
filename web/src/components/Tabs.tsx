@@ -4,7 +4,7 @@ import { NavLink, useLocation } from "react-router";
 export function Tabs({ base, tabs }: { base: string; tabs: { path: string; label: string }[] }) {
   const { search } = useLocation();
   return (
-    <nav className="-mx-4 overflow-x-auto px-4" aria-label="tabs">
+    <nav className="-mx-4 overflow-x-auto overflow-y-hidden px-4" aria-label="tabs">
       <div className="flex min-w-max gap-1 border-b border-line">
         {tabs.map((t) => (
           <NavLink

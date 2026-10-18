@@ -88,7 +88,7 @@ function RankitGrid({ methods }: { methods: string[] }) {
     <section>
       <h2 className="text-lg font-semibold">{t("methods.group.rankit")}</h2>
       <p className="mt-1 mb-3 max-w-3xl text-sm text-ink-2">{t("methods.rankitHint")}</p>
-      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+      <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-line bg-surface">
         <table className="w-full min-w-[640px] text-sm">
           <thead className="text-left text-xs text-ink-3">
             <tr>
@@ -147,7 +147,7 @@ function Heatmap({ kendall }: { kendall: Meta["kendall"] }) {
       <div className="mt-2 h-5 text-xs text-ink-2 tabular" aria-live="polite">
         {h}
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto overflow-y-hidden">
         <table className="border-separate border-spacing-[2px] text-[11px]" onMouseLeave={() => setHover(null)}>
           <tbody>
             {methods.map((m, i) => (

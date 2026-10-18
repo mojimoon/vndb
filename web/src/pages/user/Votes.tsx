@@ -33,7 +33,7 @@ export default function UserVotes() {
     </th>
   );
   const table = (list: JoinedVote[]) => (
-    <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+    <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-line bg-surface">
       <table className="w-full table-fixed text-sm">
         <thead className="whitespace-nowrap border-b border-line text-left text-xs text-ink-2">
           <tr>

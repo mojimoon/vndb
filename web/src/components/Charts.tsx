@@ -233,7 +233,7 @@ export function Matrix({
           </>
         )}
       </div>
-      <div className="flex items-center justify-center gap-1 overflow-x-auto">
+      <div className="flex items-center justify-center gap-1 overflow-x-auto overflow-y-hidden">
         <div className="shrink-0 text-xs font-medium text-ink-2 [writing-mode:vertical-rl] [text-orientation:sideways] rotate-180">{yName} →</div>
         <table className="border-separate border-spacing-[2px] text-[10px]" role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
           <tbody>
