@@ -8,6 +8,10 @@ Ready-to-paste BBCode posts introducing VNDB SciRanking:
 | [vndb.en.bbcode](vndb.en.bbcode) | VNDB forums (General / Off-topic board) | English |
 | [vndb.zh.bbcode](vndb.zh.bbcode) | VNDB forums, Chinese-speaking readers | Chinese |
 | [bangumi.en.bbcode](bangumi.en.bbcode) | Bangumi, English readers | English |
+| [vndb.update1.en.bbcode](vndb.update1.en.bbcode) | VNDB forums, follow-up in the same thread: overview ranks, tags, history, reviews on compare | English |
+
+The `img/en/update1-*.png` screenshots for the update were taken from the live
+site on 2026-10-18 (1280 × 900, light theme).
 
 Screenshots are in [img/zh](img/zh) (Chinese interface, used by the Chinese
 posts) and [img/en](img/en) (English interface). They were taken from a local

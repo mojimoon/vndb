@@ -394,9 +394,14 @@ export function RankLines({
   const sec = right ? names.length - 1 : -1; // series on the right axis
   const range = (only: (s: number) => boolean) => {
     const all = points.flatMap((p) => p.ys.filter((y, s): y is number => y !== null && only(s)));
-    const lo = values ? Math.min(...all) : Math.max(1, Math.min(...all));
-    const hi = values ? Math.max(...all, lo + 1e-9) : Math.max(...all, lo + 1);
-    return [lo, hi];
+    if (!values) {
+      const lo = Math.max(1, Math.min(...all));
+      return [lo, Math.max(...all, lo + 1)];
+    }
+    // A nearly flat series (a rating over a few days) still spans 2% of its size, so ticks read differently.
+    const [a, b] = [Math.min(...all), Math.max(...all)];
+    const pad = Math.max(0, Math.max(Math.abs(b) * 0.02, 1e-9) - (b - a)) / 2;
+    return [a - pad, b + pad];
   };
   const [lo, hi] = range((s) => s !== sec);
   const [lo2, hi2] = right ? range((s) => s === sec) : [lo, hi];

@@ -486,7 +486,7 @@ const STRINGS = {
     "rank.movers.none": "Rank history is still accumulating; movers appear once it covers 30 days.",
     "rank.tab.history": "History",
     "rank.history.none": "History accumulates from the first daily update.",
-    "rank.history.hint": "Recorded at each daily update: the rank under {method} and that day's VNDB rank, rating and votes. {n} days since {first}: daily for the last 90 days, weekly within a year, monthly before that; a date without a record shows the closest earlier day..",
+    "rank.history.hint": "Recorded at each daily update: the rank under {method} and that day's VNDB rank, rating and votes. {n} days since {first}: daily for the last 90 days, weekly within a year, monthly before that; a date without a record shows the closest earlier day.",
     "rank.history.date": "Date",
     "rank.history.prev": "Previous recorded day",
     "rank.history.next": "Next recorded day",

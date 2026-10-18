@@ -1,0 +1,35 @@
+[b]VNDB SciRanking update: tag clouds, daily history, and reviews from people who played both[/b]
+
+Site: [url=https://vndb.mojimoon.top]vndb.mojimoon.top[/url] · Source: [url=https://github.com/mojimoon/vndb]github.com/mojimoon/vndb[/url]
+
+Thanks for all the feedback on the first post. Here's what's new since then.
+
+[b]1. A more useful title overview[/b]
+The overview now shows a title's grand ranking in four contexts: among all ranked titles, among titles released the same year, by the same developer, and in the same language. Each shows the size of the group, so you can see at a glance that Steins;Gate is #33 of 7,971 overall, #6 of 295 from 2009 and #1 of 41 from MAGES. In addition, the readability of the overview has been improved.
+Screenshot: [url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/en/update1-vn-overview.png]title overview[/url]
+
+[b]2. Tag analysis for titles…[/b]
+A new Tags tab weighs each tag by TF-IDF: the tag's rating on the title (VNDB's own tag rating, 0-3) times how rare the tag is across VNDB. Tags every other title has fade out, and the ones that make this title distinctive stand out. The cloud's colour shows the tag rating and its size shows the score. Below it is a sortable table with category, frequency, rating, voters and score, filtered like on VNDB (content + technical, spoilers hidden).
+Screenshot: [url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/en/update1-vn-tags.png]Steins;Gate tags[/url]
+
+[b]…and for users[/b]
+User pages get the same tag analysis over everything the user voted on. Here the rarity is weighted by votes, so tags that come with the most popular titles (which nearly every list contains) count less. The result is a quick picture of what someone actually seeks out.
+Screenshot: [url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/en/update1-user-tags.png]a user's tag cloud[/url]
+
+[b]3. History[/b]
+Every daily refresh now records each title's grand rank, VNDB rank, VNDB rating and vote count. The new Ranking → History tab shows the whole ranking as it stood on any recorded day, with the change since. A title's Ranks tab charts its rank, VNDB rating and votes over time. Days are kept daily for 90 days, weekly for a year and monthly after that. Rank history goes back to 2026-10-06, and ratings and votes to 2026-10-14, so the charts will fill in over the coming months.
+Screenshot: [url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/en/update1-history.png]ranking history[/url]
+
+[b]4. Comparing two titles: reviews from people who reviewed both[/b]
+Below the head-to-head and the vote matrix, the comparison now lists the public notes of everyone who wrote one on both titles, side by side. They're grouped by how that person rated the pair: both high, one high and one low, or both low (7 and up counts as high). That's often the quickest way to find out why people who liked one didn't like the other.
+Screenshot: [url=https://raw.githubusercontent.com/mojimoon/vndb/main/docs/announcement/img/en/update1-compare-vn.png]Ever17 vs Steins;Gate[/url]
+
+[b]A few things you might notice[/b]
+[b]-[/b] The ranking table's header stays in view while scrolling.
+[b]-[/b] Movers now covers 30 days instead of 7, within the top 200. "Overrated by VNDB" looks at VNDB's top 200.
+[b]-[/b] The user leaderboards drop "highest / lowest mean vote" (mostly people voting everything 10 or 1) and add "most reviews".
+
+[b]Data[/b]
+As before, everything comes from the public [url=https://vndb.org/d14]database dump[/url] (ODbL), refreshed daily. Tag names are shown as on VNDB and link to the tag pages.
+
+Feedback and ideas are welcome here or on GitHub.
