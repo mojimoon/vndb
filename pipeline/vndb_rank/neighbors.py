@@ -10,7 +10,6 @@ Categories (computed from the VN's point of view, x wins / y losses / n common):
 * ahead     - x / n * log10(n)     (this VN usually rated higher)
 * behind    - y / n * log10(n)     (this VN usually rated lower)
 * contested - (1 - |x - y| / (x + y)) * log10(n)
-* tied      - (n - x - y) / n * log10(n)
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import numpy as np
 
 from .pairs import Pairs
 
-CATEGORIES = ["popular", "ahead", "behind", "contested", "tied"]
+CATEGORIES = ["popular", "ahead", "behind", "contested"]
 
 
 def _top_k_per_group(group: np.ndarray, key: np.ndarray, k: int) -> np.ndarray:
@@ -47,7 +46,6 @@ def build_neighbors(p: Pairs, ids: np.ndarray, k: int) -> dict[int, list[list[in
         "ahead": x / n * logn,
         "behind": y / n * logn,
         "contested": (1 - np.abs(x - y) / decided) * logn * (x + y > 0),
-        "tied": (n - x - y) / n * logn,
     }
     keep = np.zeros(len(me), dtype=bool)
     for key in keys.values():

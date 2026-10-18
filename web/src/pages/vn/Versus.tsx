@@ -9,7 +9,7 @@ import { VnPicker } from "../../components/VnPicker";
 import { useVnContext } from "./VnLayout";
 
 // Same categories and keys as pipeline/vndb_rank/neighbors.py.
-const CATEGORIES = ["popular", "ahead", "behind", "contested", "tied"] as const;
+const CATEGORIES = ["popular", "ahead", "behind", "contested"] as const;
 type Category = (typeof CATEGORIES)[number];
 type Neighbor = VnDetail["neighbors"][number];
 
@@ -18,7 +18,6 @@ const KEYS: Record<Category, (n: Neighbor) => number> = {
   ahead: (n) => (n.wins / n.common) * Math.log10(n.common),
   behind: (n) => (n.losses / n.common) * Math.log10(n.common),
   contested: (n) => (n.wins + n.losses > 0 ? (1 - Math.abs(n.wins - n.losses) / (n.wins + n.losses)) * Math.log10(n.common) : 0),
-  tied: (n) => ((n.common - n.wins - n.losses) / n.common) * Math.log10(n.common),
 };
 
 export default function Versus() {
