@@ -104,7 +104,7 @@ export function TagCloud({ rows, marks, hint }: { rows: TagRow[]; marks: boolean
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-3">
         <span className="inline-flex items-center gap-1.5">
           {t("tags.legend.color")} 0
-          <span aria-hidden className="h-2 w-20 rounded-full" style={{ background: "linear-gradient(to right in oklab, var(--sig-0) 50%, var(--sig-1) 66.7%, var(--sig-2) 83.3%, var(--sig-3))" }} />3
+          <span aria-hidden className="h-2 w-20 rounded-full" style={{ background: "linear-gradient(to right in oklab, var(--sig-0) 33.3%, var(--sig-1) 55.6%, var(--sig-2) 77.8%, var(--sig-3))" }} />3
         </span>
         <span>{t("tags.legend.size")}</span>
         <span>{hint}</span>
